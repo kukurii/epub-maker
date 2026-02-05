@@ -11,7 +11,7 @@ import {
   AlignCenter,
   X,
   ChevronDown,
-  ChevronUp,
+  ChevronUp, 
   Type,
   RotateCcw,
   RotateCw,
@@ -80,21 +80,31 @@ const Editor: React.FC<EditorProps> = ({ content, onContentChange, onSplitChapte
 
     const headings = editorRef.current.querySelectorAll('h1, h2');
     const subItems: TocItem[] = [];
-    let newTitle = '';
+    let newTitle: string | undefined = undefined;
 
     headings.forEach((el) => {
         if (!el.id) {
             el.id = generateId(el.textContent || '');
         }
         
-        if (el.tagName === 'H1' && !newTitle) {
-            newTitle = el.textContent || '';
-        }
-
-        if (el.tagName === 'H2') {
+        const text = (el.textContent || '').trim();
+        
+        if (el.tagName === 'H1') {
+            if (newTitle === undefined) {
+                // First H1 is the Chapter Title
+                newTitle = text;
+            } else {
+                // Subsequent H1s are level 1 sub-items
+                subItems.push({
+                    id: el.id,
+                    text: text || '无标题',
+                    level: 1
+                });
+            }
+        } else if (el.tagName === 'H2') {
             subItems.push({
                 id: el.id,
-                text: el.textContent || 'Untitled Section',
+                text: text || '无标题',
                 level: 2
             });
         }
@@ -146,7 +156,7 @@ const Editor: React.FC<EditorProps> = ({ content, onContentChange, onSplitChapte
         execCmd('formatBlock', 'P');
     } else {
         // Otherwise, format the selection with the target tag.
-        execCmd('formatBlock', tag);
+        execCmd('formatBlock', 'H1' === tag ? 'H1' : 'H2');
     }
   };
   
@@ -162,7 +172,8 @@ const Editor: React.FC<EditorProps> = ({ content, onContentChange, onSplitChapte
   };
 
   const insertImage = (img: ImageAsset) => {
-    const html = `<img src="${img.data}" data-filename="${img.name}" alt="${img.name}" />`;
+    // BUG FIX: Added data-id to ensure uniqueness even if filenames are identical
+    const html = `<img src="${img.data}" data-id="${img.id}" data-filename="${img.name}" alt="${img.name}" />`;
     // Restore focus before inserting
     editorRef.current?.focus();
     execCmd('insertHTML', html);
@@ -178,9 +189,12 @@ const Editor: React.FC<EditorProps> = ({ content, onContentChange, onSplitChapte
     }
 
     const range = selection.getRangeAt(0);
-    // Relaxed check to allow more flexible splitting
-    if (!editorRef.current.contains(range.commonAncestorContainer) && range.commonAncestorContainer !== editorRef.current) {
-        // Proceed with caution or return
+    
+    // Safety check: ensure selection is actually inside the editor
+    if (!editorRef.current.contains(range.commonAncestorContainer)) {
+        // Try to recover focus if user clicked button and lost focus
+        editorRef.current.focus();
+        return; 
     }
 
     try {
@@ -285,21 +299,25 @@ const Editor: React.FC<EditorProps> = ({ content, onContentChange, onSplitChapte
   const activeStyle = PRESET_STYLES.find(s => s.id === project.activeStyleId) || PRESET_STYLES[0];
   const activeStyleName = activeStyle.name || project.activeStyleId;
 
-  // Optimization: Memoize scoped CSS to avoid recalculation on every render
+  // Gather extra CSS from extraFiles
+  const extraCSS = project.extraFiles
+    ?.filter(f => f.type === 'css')
+    .map(f => f.content)
+    .join('\n') || '';
+
   const scopedCSS = useMemo(() => `
     .editor-paper {
-       /* Inherit font properties from body rule */
        ${activeStyle.css.match(/body\s*{([^}]*)}/)?.[1] || ''}
     }
-    /* Scope other tags */
     ${activeStyle.css
-       .replace(/body\s*{[^}]*}/, '') // Remove body rule as we extracted it
-       .replace(/(^|\})\s*([a-z0-9]+)/gi, '$1 .editor-paper $2') // Prefix tags
+       .replace(/body\s*{[^}]*}/, '')
+       .replace(/(^|\})\s*([a-z0-9]+)/gi, '$1 .editor-paper $2')
     }
-    /* Apply Custom CSS safely */
     ${project.customCSS.replace(/(^|\})\s*([a-z0-9]+)/gi, '$1 .editor-paper $2')}
     
-    /* Editor-specific image styling for better UX */
+    /* Extra Files CSS (Scoped naively) */
+    ${extraCSS.replace(/(^|\})\s*([a-z0-9\.\-\_]+)/gi, '$1 .editor-paper $2')}
+    
     .editor-paper img {
         cursor: pointer;
         transition: all 0.2s ease-in-out;
@@ -309,7 +327,7 @@ const Editor: React.FC<EditorProps> = ({ content, onContentChange, onSplitChapte
         outline-offset: 2px;
         box-shadow: 0 4px 15px rgba(0,0,0,0.1);
     }
-  `, [activeStyle.css, project.customCSS]);
+  `, [activeStyle.css, project.customCSS, extraCSS]);
   
   return (
     <div className="flex flex-col h-full bg-[#F5F5F7] relative">
@@ -363,7 +381,6 @@ const Editor: React.FC<EditorProps> = ({ content, onContentChange, onSplitChapte
       {/* Find & Replace Bar */}
       {showFindBar && (
         <div className="flex-none bg-gray-50 border-b border-gray-200 px-4 py-2 flex flex-wrap gap-2 items-center animate-in slide-in-from-top-2 z-10">
-           {/* ... existing find bar code ... */}
            <div className="flex items-center bg-white border border-gray-300 rounded-md px-2 py-1 shadow-sm focus-within:ring-2 focus-within:ring-blue-500 focus-within:border-transparent flex-1 min-w-[150px]">
               <Search size={14} className="text-gray-400 mr-2 flex-shrink-0" />
               <input 

@@ -37,17 +37,44 @@ export interface BookStyle {
   css: string;
 }
 
+export interface CoverDesign {
+    layoutMode: 'text-over' | 'text-above' | 'text-below';
+    fontFamilyTitle: string;
+    fontSizeTitle: number;
+    fontColorTitle: string;
+    fontWeightTitle: string;
+    letterSpacingTitle: number;
+    fontFamilyAuthor: string;
+    fontSizeAuthor: number;
+    fontColorAuthor: string;
+    textAlign: 'left' | 'center' | 'right';
+    verticalOffset: number;
+    overlayOpacity: number;
+    textShadow: boolean;
+    borderStyle: string;
+    backgroundCSS: string;
+}
+
+export interface ExtraFile {
+  id: string;
+  filename: string;
+  content: string;
+  type: 'css' | 'text' | 'xml'; 
+}
+
 export interface ProjectData {
   metadata: Metadata;
   chapters: Chapter[];
   images: ImageAsset[];
+  extraFiles: ExtraFile[];
   cover: string | null; // Base64 data url
   coverCustomCSS?: string; // New: Custom CSS for cover generation
+  coverDesign?: CoverDesign;
   activeStyleId: string;
   customCSS: string;
 }
 
-export type ViewMode = 'files' | 'chapters' | 'metadata' | 'styles' | 'images' | 'cover';
+export type ViewMode = 'files' | 'chapters' | 'metadata' | 'styles' | 'images' | 'cover' | 'structure';
 
 export const PRESET_STYLES: BookStyle[] = [
   {

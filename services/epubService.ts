@@ -1,6 +1,6 @@
 import JSZip from 'jszip';
 import saveAs from 'file-saver';
-import { ProjectData, PRESET_STYLES, Chapter, Metadata, ImageAsset } from '../types';
+import { ProjectData, PRESET_STYLES, Chapter, Metadata, ImageAsset, ExtraFile } from '../types';
 
 // Helper to ensure HTML is valid XHTML for EPUB (self-closing tags, entities)
 const fixXHTML = (html: string): string => {
@@ -44,6 +44,17 @@ export const generateEpub = async (project: ProjectData) => {
   const finalCss = `${activeStyle.css}\n\n/* Custom CSS */\n${project.customCSS}`;
   oebps.file('style.css', finalCss);
 
+  // --- Extra Files (Custom CSS created in Structure View) ---
+  const extraCssLinks: string[] = [];
+  if (project.extraFiles) {
+      project.extraFiles.forEach(file => {
+          oebps.file(file.filename, file.content);
+          if (file.type === 'css') {
+              extraCssLinks.push(`<link rel="stylesheet" type="text/css" href="${file.filename}"/>`);
+          }
+      });
+  }
+
   // --- Images Processing ---
   let coverFilename = '';
   if (project.cover) {
@@ -59,6 +70,7 @@ export const generateEpub = async (project: ProjectData) => {
 <head>
   <title>Cover</title>
   <link rel="stylesheet" type="text/css" href="style.css"/>
+  ${extraCssLinks.join('\n  ')}
 </head>
 <body class="cover-page">
   <div class="cover-container">
@@ -69,8 +81,10 @@ export const generateEpub = async (project: ProjectData) => {
     oebps.file('cover.xhtml', coverXhtml);
   }
 
-  // Other images map (ID -> Filename)
-  const imageMap = new Map<string, string>();
+  // Other images map
+  // BUG FIX: Use both ID and Name maps to handle collisions and legacy content
+  const imageMapByName = new Map<string, string>();
+  const imageMapById = new Map<string, string>();
   
   project.images.forEach((img) => {
     const imgData = img.data.split(',')[1];
@@ -82,24 +96,40 @@ export const generateEpub = async (project: ProjectData) => {
 
     // Use ID for uniqueness in the EPUB package
     const uniqueFilename = `img_${img.id}.${ext}`;
-    imageMap.set(img.name, uniqueFilename); // Map original name to unique file
+    
+    // Fallback map
+    imageMapByName.set(img.name, uniqueFilename);
+    // Primary map
+    imageMapById.set(img.id, uniqueFilename);
+    
     oebps.file(`images/${uniqueFilename}`, imgData, { base64: true });
   });
 
+  // BUG FIX: Use DOMParser to safely parse and replace attributes
   const processContent = (htmlContent: string) => {
-     // Replace image src with relative paths
-     // We look for data-filename which stores the original name
-     let processed = htmlContent.replace(
-        /(<img\s+[^>]*?)data-filename="([^"]+)"([^>]*?>)/gi, 
-        (match, p1, filename, p3) => {
-            const uniqueName = imageMap.get(filename);
-            if (uniqueName) {
-                return match.replace(/src="[^"]*"/, `src="images/${uniqueName}"`);
-            }
-            return match; // Fallback if image not found
-        }
-     );
-     return fixXHTML(processed);
+     const parser = new DOMParser();
+     const doc = parser.parseFromString(htmlContent, 'text/html');
+     
+     const images = doc.querySelectorAll('img');
+     images.forEach(img => {
+         const id = img.getAttribute('data-id');
+         const filename = img.getAttribute('data-filename');
+         
+         let uniqueName = null;
+         
+         if (id && imageMapById.has(id)) {
+             uniqueName = imageMapById.get(id);
+         } else if (filename && imageMapByName.has(filename)) {
+             uniqueName = imageMapByName.get(filename);
+         }
+         
+         if (uniqueName) {
+             img.setAttribute('src', `images/${uniqueName}`);
+         }
+     });
+     
+     // Serialize body content
+     return fixXHTML(doc.body.innerHTML);
   };
 
   // --- Chapters ---
@@ -112,11 +142,14 @@ export const generateEpub = async (project: ProjectData) => {
 <head>
   <title>${chapter.title}</title>
   <link rel="stylesheet" type="text/css" href="style.css"/>
+  ${extraCssLinks.join('\n  ')}
 </head>
 <body>
   ${processedContent}
 </body>
 </html>`;
+    // If the chapter has a custom ID that is a valid filename, use it? 
+    // For now, sticking to chapter_index for safety and simplicity in manifest.
     oebps.file(`chapter_${index}.xhtml`, chapterContent);
   });
 
@@ -133,6 +166,7 @@ export const generateEpub = async (project: ProjectData) => {
 <head>
   <title>Table of Contents</title>
   <link rel="stylesheet" type="text/css" href="style.css"/>
+  ${extraCssLinks.join('\n  ')}
 </head>
 <body>
   <h1>目录</h1>
@@ -163,15 +197,26 @@ export const generateEpub = async (project: ProjectData) => {
   manifestItems += `<item id="style" href="style.css" media-type="text/css"/>\n`;
   manifestItems += `<item id="ncx" href="toc.ncx" media-type="application/x-dtbncx+xml"/>\n`;
 
-  // 4. Content Images
+  // 4. Extra Files (Manifest)
+  if (project.extraFiles) {
+      project.extraFiles.forEach(file => {
+          const mediaType = file.type === 'css' ? 'text/css' : 'application/xml';
+          manifestItems += `<item id="extra_${file.id}" href="${file.filename}" media-type="${mediaType}"/>\n`;
+      });
+  }
+
+  // 5. Content Images
+  // We iterate through mapped values to ensure we only include used unique files
+  const uniqueFiles = new Set(imageMapById.values());
+  
   project.images.forEach((img) => {
-    const uniqueName = imageMap.get(img.name);
+    const uniqueName = imageMapById.get(img.id);
     if (uniqueName) {
         manifestItems += `<item id="img_${img.id}" href="images/${uniqueName}" media-type="${img.type}"/>\n`;
     }
   });
 
-  // 5. Chapters
+  // 6. Chapters
   project.chapters.forEach((_, index) => {
     manifestItems += `<item id="chapter_${index}" href="chapter_${index}.xhtml" media-type="application/xhtml+xml"/>\n`;
   });
@@ -406,11 +451,13 @@ export const parseEpub = async (file: File): Promise<Partial<ProjectData>> => {
     // 4. Extract Manifest and process images
     const manifestItems = opfDoc.getElementsByTagName('item');
     const itemMap = new Map<string, { href: string; mediaType: string; zipPath: string }>();
-    const imagePathMap = new Map<string, string>();
+    const imagePathMap = new Map<string, {dataUrl: string, id: string}>();
     const newImages: ImageAsset[] = [];
+    const newExtraFiles: ExtraFile[] = [];
+    let importedCustomCSS = '';
 
     const manifestPromises = Array.from(manifestItems).map(async (item) => {
-        const id = item.getAttribute('id');
+        const id = item.getAttribute('id') || 'unknown';
         const href = decodeURIComponent(item.getAttribute('href') || '');
         const mediaType = item.getAttribute('media-type');
         if (id && href && mediaType) {
@@ -422,14 +469,33 @@ export const parseEpub = async (file: File): Promise<Partial<ProjectData>> => {
                 if (imageFile) {
                     const data = await imageFile.async('base64');
                     const dataUrl = `data:${mediaType};base64,${data}`;
+                    const assetId = Date.now().toString() + Math.random().toString(36).substr(2,5);
                     const asset: ImageAsset = {
-                        id: Date.now().toString() + Math.random(),
+                        id: assetId,
                         name: href.split('/').pop() || 'image',
                         data: dataUrl,
                         type: mediaType
                     };
                     newImages.push(asset);
-                    imagePathMap.set(zipPath, dataUrl);
+                    imagePathMap.set(zipPath, { dataUrl, id: assetId });
+                }
+            } else if (mediaType === 'text/css') {
+                const cssFile = zip.file(zipPath);
+                if (cssFile) {
+                    const text = await cssFile.async('text');
+                    // Heuristic: if it's named style.css or main.css, stick it in customCSS
+                    // Otherwise add to extraFiles
+                    const filename = href.split('/').pop() || '';
+                    if (filename.toLowerCase() === 'style.css' || filename.toLowerCase() === 'main.css' || filename.toLowerCase() === 'stylesheet.css') {
+                        importedCustomCSS += text + '\n';
+                    } else {
+                        newExtraFiles.push({
+                            id: id,
+                            filename: filename,
+                            content: text,
+                            type: 'css'
+                        });
+                    }
                 }
             }
         }
@@ -460,7 +526,11 @@ export const parseEpub = async (file: File): Promise<Partial<ProjectData>> => {
                         const imageZipPath = normalizePath(`${chapterDir}/${decodedSrc}`);
 
                         if (imagePathMap.has(imageZipPath)) {
-                            img.setAttribute(srcAttr, imagePathMap.get(imageZipPath)!);
+                            const { dataUrl, id } = imagePathMap.get(imageZipPath)!;
+                            img.setAttribute(srcAttr, dataUrl); // Set data URL for preview
+                            img.setAttribute('data-id', id);    // Set ID for re-export mapping
+                            // Preserve filename in data-filename if we can guess it, but ID is primary now
+                            img.setAttribute('data-filename', imageZipPath.split('/').pop() || 'image'); 
                         }
                     }
                 });
@@ -487,7 +557,7 @@ export const parseEpub = async (file: File): Promise<Partial<ProjectData>> => {
     if (coverId) {
         const coverItem = itemMap.get(coverId);
         if (coverItem) {
-            coverDataUrl = imagePathMap.get(coverItem.zipPath) || null;
+            coverDataUrl = imagePathMap.get(coverItem.zipPath)?.dataUrl || null;
         }
     }
     
@@ -495,6 +565,8 @@ export const parseEpub = async (file: File): Promise<Partial<ProjectData>> => {
         metadata: newMetadata,
         chapters: resolvedChapters,
         images: newImages,
+        extraFiles: newExtraFiles,
+        customCSS: importedCustomCSS,
         cover: coverDataUrl,
     };
 };

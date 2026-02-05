@@ -8,7 +8,8 @@ import {
   Image as ImageIcon, 
   Book,
   Download,
-  Trash
+  Trash,
+  FolderOpen
 } from 'lucide-react';
 
 interface SidebarProps {
@@ -26,6 +27,7 @@ const Sidebar: React.FC<SidebarProps> = ({ currentView, onViewChange, onExport, 
     { id: 'styles', label: '样式主题', icon: <Palette size={18} /> },
     { id: 'images', label: '图片素材', icon: <ImageIcon size={18} /> },
     { id: 'cover', label: '封面设计', icon: <Book size={18} /> },
+    { id: 'structure', label: '文件管理', icon: <FolderOpen size={18} /> },
   ];
 
   const handleResetClick = () => {
@@ -50,6 +52,8 @@ const Sidebar: React.FC<SidebarProps> = ({ currentView, onViewChange, onExport, 
         {menuItems.map((item) => (
           <button
             key={item.id}
+            type="button"
+            onMouseDown={(e) => e.preventDefault()}
             onClick={() => onViewChange(item.id)}
             className={`w-full flex items-center px-4 py-3 rounded-xl transition-all duration-200 text-sm font-medium ${
               currentView === item.id
@@ -65,6 +69,8 @@ const Sidebar: React.FC<SidebarProps> = ({ currentView, onViewChange, onExport, 
 
       <div className="p-4 space-y-3 border-t border-gray-200 bg-gray-50/50">
         <button
+          type="button"
+          onMouseDown={(e) => e.preventDefault()}
           onClick={onExport}
           className="w-full bg-blue-600 hover:bg-blue-700 text-white py-3 px-4 rounded-xl flex items-center justify-center transition-all shadow-lg shadow-blue-500/20 active:scale-95 font-semibold text-sm"
         >
@@ -73,6 +79,7 @@ const Sidebar: React.FC<SidebarProps> = ({ currentView, onViewChange, onExport, 
         </button>
         
         <button
+            type="button"
             onClick={handleResetClick}
             className="w-full text-gray-400 hover:text-red-500 hover:bg-red-50 py-2 px-4 rounded-lg flex items-center justify-center transition-colors text-xs font-medium"
         >
