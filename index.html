@@ -1,9 +1,9 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="zh-CN">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>EPUB Maker</title>
+    <title>EPUB Maker - 专业电子书制作工具</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
       tailwind.config = {
@@ -24,46 +24,62 @@
       }
     </script>
     <style>
-      /* Custom scrollbar for webkit */
+      /* 自定义滚动条 */
       ::-webkit-scrollbar {
         width: 8px;
         height: 8px;
       }
       ::-webkit-scrollbar-track {
-        background: #f1f1f1; 
+        background: transparent; 
       }
       ::-webkit-scrollbar-thumb {
-        background: #888; 
-        border-radius: 4px;
+        background: #cbd5e1; 
+        border-radius: 20px;
+        border: 2px solid transparent;
+        background-clip: content-box;
       }
       ::-webkit-scrollbar-thumb:hover {
-        background: #555; 
+        background: #94a3b8; 
+        background-clip: content-box;
       }
       
-      /* Print styles for editor preview */
+      body {
+        -webkit-font-smoothing: antialiased;
+        -moz-osx-font-smoothing: grayscale;
+      }
+
+      /* 编辑器预览基础样式 */
       .editor-content h1 { font-size: 2em; font-weight: bold; margin-bottom: 0.5em; margin-top: 1em; }
       .editor-content h2 { font-size: 1.5em; font-weight: bold; margin-bottom: 0.5em; margin-top: 1em; }
       .editor-content p { margin-bottom: 1em; line-height: 1.6; }
       .editor-content img { max-width: 100%; height: auto; display: block; margin: 1em auto; }
+
+      /* 背景装饰网格 */
+      .pattern-grid {
+        background-image: radial-gradient(#e2e8f0 1px, transparent 1px);
+        background-size: 24px 24px;
+      }
     </style>
-  <script type="importmap">
-{
-  "imports": {
-    "react/": "https://esm.sh/react@^19.2.4/",
-    "react": "https://esm.sh/react@^19.2.4",
-    "jszip": "https://esm.sh/jszip@^3.10.1",
-    "lucide-react": "https://esm.sh/lucide-react@^0.563.0",
-    "react-dom/": "https://esm.sh/react-dom@^19.2.4/",
-    "html-to-image": "https://esm.sh/html-to-image@^1.11.13",
-    "file-saver": "https://esm.sh/file-saver@^2.0.5",
-    "@google/genai": "https://esm.sh/@google/genai"
-  }
-}
-</script>
-<link rel="stylesheet" href="/index.css">
+    <script type="importmap">
+    {
+      "imports": {
+        "react": "https://esm.sh/react@^19.2.4",
+        "react/": "https://esm.sh/react@^19.2.4/",
+        "react-dom": "https://esm.sh/react-dom@^19.2.4",
+        "react-dom/": "https://esm.sh/react-dom@^19.2.4/",
+        "lucide-react": "https://esm.sh/lucide-react@^0.563.0",
+        "jszip": "https://esm.sh/jszip@^3.10.1",
+        "html-to-image": "https://esm.sh/html-to-image@^1.11.13",
+        "file-saver": "https://esm.sh/file-saver@^2.0.5",
+        "@google/genai": "https://esm.sh/@google/genai@^1.40.0"
+      }
+    }
+    </script>
+  <link rel="stylesheet" href="/index.css">
 </head>
-  <body class="bg-gray-100 text-gray-900 h-screen overflow-hidden">
+  <body class="bg-[#F5F5F7] text-gray-900 h-screen overflow-hidden">
     <div id="root" class="h-full"></div>
+    <script type="module" src="./index.tsx"></script>
   <script type="module" src="/index.tsx"></script>
 </body>
 </html>

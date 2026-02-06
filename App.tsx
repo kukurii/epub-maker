@@ -1,5 +1,7 @@
+
+
 import React, { useState, useEffect, useRef } from 'react';
-import { ProjectData, ViewMode, CoverDesign, TocItem, Chapter } from './types';
+import { ProjectData, ViewMode, CoverDesign, TocItem, Chapter, ImageAsset, ExtraFile } from './types';
 import Sidebar from './components/Sidebar';
 import Editor from './components/Editor';
 import Directory from './components/ChapterManager';
@@ -29,7 +31,8 @@ const INITIAL_COVER_DESIGN: CoverDesign = {
     overlayOpacity: 0.3,
     textShadow: true,
     borderStyle: 'none',
-    backgroundCSS: 'background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);'
+    backgroundCSS: 'background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);',
+    showSeries: false // 默认不显示系列名
 };
 
 const INITIAL_PROJECT_STATE: ProjectData = {
@@ -50,6 +53,7 @@ const INITIAL_PROJECT_STATE: ProjectData = {
     coverCustomCSS: '',
     coverDesign: INITIAL_COVER_DESIGN,
     activeStyleId: 'classic',
+    isPresetStyleActive: true,
     customCSS: ''
 };
 
@@ -72,10 +76,12 @@ const App: React.FC = () => {
       try {
         const parsed = JSON.parse(saved);
         setProject({
+            ...INITIAL_PROJECT_STATE,
             ...parsed,
             // Ensure coverDesign exists for old projects
             coverDesign: parsed.coverDesign || INITIAL_COVER_DESIGN,
-            extraFiles: parsed.extraFiles || []
+            extraFiles: parsed.extraFiles || [],
+            isPresetStyleActive: parsed.isPresetStyleActive !== undefined ? parsed.isPresetStyleActive : true,
         });
         if (parsed.chapters && parsed.chapters.length > 0) {
            setActiveChapterId(parsed.chapters[0].id);
@@ -105,215 +111,178 @@ const App: React.FC = () => {
 
   const handleReset = () => {
     isResettingRef.current = true;
-    try {
-        localStorage.removeItem(STORAGE_KEY);
-    } catch (e) {
-        console.error("Failed to clear local storage", e);
-    }
+    localStorage.removeItem(STORAGE_KEY);
     setProject(INITIAL_PROJECT_STATE);
     setActiveChapterId(null);
     setCurrentView('files');
-    // Reload to ensure clean state and clear any in-memory component states
     setTimeout(() => {
-        window.location.reload();
-    }, 100);
+      isResettingRef.current = false;
+    }, 500);
+  };
+
+  const handleUpdateProject = (updates: Partial<ProjectData>) => {
+    setProject(prev => ({ ...prev, ...updates }));
+  };
+
+  const handleChaptersLoaded = (chapters: Chapter[], firstChapterId: string) => {
+    handleUpdateProject({ chapters });
+    setActiveChapterId(firstChapterId);
+    setCurrentView('chapters');
+  };
+
+  const handleSelectChapter = (id: string) => {
+    if (id === activeChapterId) return;
+    setActiveChapterId(id);
+    setScrollToAnchor(null); // Clear scroll target when switching chapters manually
+  };
+
+  const handleScrollToAnchor = (chapterId: string, anchorId: string) => {
+    if (activeChapterId !== chapterId) {
+      setActiveChapterId(chapterId);
+    }
+    // Use a timeout to ensure the editor has re-rendered with the new chapter content
+    setTimeout(() => setScrollToAnchor(anchorId), 50);
+  };
+
+  const handleUpdateChapters = (chapters: Chapter[]) => {
+    handleUpdateProject({ chapters });
+  };
+
+  const handleUpdateChapterContent = (newContent: string, newTitle?: string, subItems?: TocItem[]) => {
+    if (!activeChapterId) return;
+    setProject(prev => ({
+      ...prev,
+      chapters: prev.chapters.map(c => {
+        if (c.id === activeChapterId) {
+          const updatedChapter = { ...c, content: newContent };
+          if (newTitle !== undefined) {
+            updatedChapter.title = newTitle;
+          }
+          if (subItems !== undefined) {
+            updatedChapter.subItems = subItems;
+          }
+          return updatedChapter;
+        }
+        return c;
+      })
+    }));
+  };
+  
+  const handleSplitChapter = (beforeContent: string, afterContent: string) => {
+    if (!activeChapterId) return;
+    setProject(prev => {
+      const chapterIndex = prev.chapters.findIndex(c => c.id === activeChapterId);
+      if (chapterIndex === -1) return prev;
+
+      const currentChapter = prev.chapters[chapterIndex];
+      const updatedCurrentChapter = { ...currentChapter, content: beforeContent };
+      
+      const newChapter: Chapter = {
+        id: Date.now().toString(),
+        title: '新章节 (切分)',
+        content: afterContent,
+        level: currentChapter.level,
+        subItems: [],
+      };
+
+      const newChapters = [...prev.chapters];
+      newChapters[chapterIndex] = updatedCurrentChapter;
+      newChapters.splice(chapterIndex + 1, 0, newChapter);
+      
+      setActiveChapterId(newChapter.id);
+      return { ...prev, chapters: newChapters };
+    });
   };
 
   const activeChapter = project.chapters.find(c => c.id === activeChapterId);
 
-  const updateChapterContent = (content: string, title?: string, subItems?: TocItem[]) => {
-    if (!activeChapterId) return;
-    setProject(prev => ({
-      ...prev,
-      chapters: prev.chapters.map(c => 
-        c.id === activeChapterId 
-          ? { ...c, content, title: title || c.title, subItems: subItems || c.subItems } 
-          : c
-      )
-    }));
+  const renderView = () => {
+    switch (currentView) {
+      case 'files':
+        return <FilesView onProjectUpdate={handleUpdateProject} onChaptersLoaded={handleChaptersLoaded} />;
+      case 'chapters':
+        return (
+          <div className="flex flex-1 h-full overflow-hidden">
+            <Directory
+              chapters={project.chapters}
+              currentChapterId={activeChapterId}
+              onSelectChapter={handleSelectChapter}
+              onScrollToAnchor={handleScrollToAnchor}
+              onUpdateChapters={handleUpdateChapters}
+            />
+            {activeChapter ? (
+              <Editor
+                key={activeChapterId}
+                content={activeChapter.content}
+                onContentChange={handleUpdateChapterContent}
+                onSplitChapter={handleSplitChapter}
+                project={project}
+                scrollToId={scrollToAnchor}
+              />
+            ) : (
+              <div className="flex-1 flex flex-col items-center justify-center bg-gray-50 text-gray-400">
+                <BookOpen size={48} className="mb-4"/>
+                <p>请从左侧选择一个章节开始编辑</p>
+              </div>
+            )}
+          </div>
+        );
+      case 'metadata':
+        return <MetadataView metadata={project.metadata} onUpdate={(m) => handleUpdateProject({ metadata: m })} />;
+      case 'styles':
+        return <StylesView project={project} activeChapter={activeChapter} onUpdateProject={handleUpdateProject} />;
+      case 'images':
+        return <ImagesView images={project.images} onUpdateImages={(images) => handleUpdateProject({ images })} />;
+      case 'cover':
+        return <CoverGenerator 
+                  project={project} 
+                  onUpdateCover={(cover) => handleUpdateProject({ cover })} 
+                  onUpdateCoverCSS={(coverCustomCSS) => handleUpdateProject({ coverCustomCSS })}
+                  onUpdateCoverDesign={(coverDesign) => handleUpdateProject({ coverDesign })}
+               />;
+      case 'structure':
+        return <StructureView project={project} onUpdateProject={handleUpdateProject} />;
+      default:
+        return <div>Unknown view</div>;
+    }
   };
 
-  const handleSplitChapter = (beforeContent: string, afterContent: string) => {
-      if (!activeChapterId) return;
-      const currentIndex = project.chapters.findIndex(c => c.id === activeChapterId);
-      if (currentIndex === -1) return;
-      
-      const parser = new DOMParser();
-
-      // 1. Process New Chapter (After Content)
-      const docAfter = parser.parseFromString(afterContent, 'text/html');
-      const firstH1After = docAfter.querySelector('h1');
-      let newChapterTitle = '新建切分章节';
-      
-      if (firstH1After && firstH1After.textContent?.trim()) {
-          newChapterTitle = firstH1After.textContent.trim();
-      }
-
-      const newSubItems: TocItem[] = [];
-      const headingsAfter = docAfter.querySelectorAll('h1, h2');
-      let foundTitleAfter = false;
-      
-      headingsAfter.forEach((el) => {
-          if (!el.id) {
-             el.id = 'heading-' + Math.random().toString(36).substr(2, 9);
-          }
-          
-          const text = (el.textContent || '').trim();
-          if (el.tagName === 'H1') {
-              if (!foundTitleAfter) {
-                  foundTitleAfter = true;
-              } else {
-                  newSubItems.push({ id: el.id, text, level: 1 });
-              }
-          } else {
-              newSubItems.push({ id: el.id, text, level: 2 });
-          }
-      });
-      
-      const finalAfterContent = docAfter.body.innerHTML;
-
-      // 2. Process Current Chapter (Before Content) to update subItems
-      const docBefore = parser.parseFromString(beforeContent, 'text/html');
-      const currentSubItems: TocItem[] = [];
-      const headingsBefore = docBefore.querySelectorAll('h1, h2');
-      let foundTitleBefore = false;
-      
-      headingsBefore.forEach((el) => {
-           // IDs should typically already exist
-           if (!el.id) el.id = 'heading-' + Math.random().toString(36).substr(2, 9);
-           
-           const text = (el.textContent || '').trim();
-           if (el.tagName === 'H1') {
-               if (!foundTitleBefore) {
-                   foundTitleBefore = true;
-               } else {
-                   currentSubItems.push({ id: el.id, text, level: 1 });
-               }
-           } else {
-               currentSubItems.push({ id: el.id, text, level: 2 });
-           }
-      });
-      const finalBeforeContent = docBefore.body.innerHTML;
-
-      const currentChapter = project.chapters[currentIndex];
-      const updatedCurrentChapter = { 
-          ...currentChapter, 
-          content: finalBeforeContent,
-          subItems: currentSubItems
-      };
-      
-      const newChapterId = Date.now().toString();
-      const newChapter: Chapter = { 
-          id: newChapterId, 
-          title: newChapterTitle, 
-          content: finalAfterContent, 
-          level: 1, 
-          subItems: newSubItems 
-      };
-
-      const newChapters = [...project.chapters];
-      newChapters[currentIndex] = updatedCurrentChapter;
-      newChapters.splice(currentIndex + 1, 0, newChapter);
-      setProject(p => ({ ...p, chapters: newChapters }));
-      setActiveChapterId(newChapterId);
-  };
+  if (!isLoaded) {
+    return (
+      <div className="w-screen h-screen flex items-center justify-center bg-gray-100 text-gray-500">
+        <BookOpen size={40} className="mr-4 text-blue-500 animate-pulse" />
+        <span className="text-lg font-medium">正在加载项目...</span>
+      </div>
+    );
+  }
 
   return (
-    <div className="flex h-screen bg-[#F5F5F7] font-sans text-gray-900 selection:bg-blue-100 selection:text-blue-800">
-      <Sidebar 
-        currentView={currentView} 
-        onViewChange={setCurrentView} 
-        onExport={() => generateEpub(project)} 
-        onReset={handleReset} 
+    <div className="flex h-screen bg-white font-sans">
+      <Sidebar
+        currentView={currentView}
+        onViewChange={setCurrentView}
+        onExport={() => generateEpub(project)}
+        onReset={handleReset}
       />
-      
-      <main className="flex-1 flex overflow-hidden relative shadow-2xl rounded-l-[2.5rem] bg-[#F5F5F7] border-l border-white/50 ring-1 ring-black/5 clip-path-safe">
-        <div className="absolute bottom-12 right-8 z-50 pointer-events-none transition-opacity duration-500 ease-in-out">
-            <div className={`flex items-center space-x-2 px-3 py-1.5 rounded-full backdrop-blur-md border shadow-sm ${ saveStatus === 'saving' ? 'bg-yellow-50/80 border-yellow-200 text-yellow-600' : 'bg-green-50/80 border-green-200 text-green-600'}`}>
-               {saveStatus === 'saving' ? <Cloud size={14} className="animate-pulse" /> : <CheckCircle2 size={14} />}
-               <span className="text-xs font-medium">{saveStatus === 'saving' ? '保存中...' : '已自动保存'}</span>
+      <main className="flex-1 flex flex-col h-full overflow-hidden relative">
+        {renderView()}
+        <div className="absolute bottom-4 right-4 z-50 pointer-events-none">
+          {saveStatus === 'saving' && (
+            <div className="flex items-center text-xs text-gray-500 bg-white/70 backdrop-blur-md py-1.5 px-3 rounded-full shadow-md animate-in fade-in">
+              <Cloud size={14} className="mr-2"/>
+              保存中...
             </div>
-        </div>
-
-        {currentView === 'chapters' && (
-          <div className="w-80 border-r border-gray-100 bg-white/60 backdrop-blur-xl z-10 flex flex-col">
-            <Directory 
-              chapters={project.chapters} 
-              currentChapterId={activeChapterId} 
-              onSelectChapter={(id) => { setActiveChapterId(id); setScrollToAnchor(null); }} 
-              onScrollToAnchor={(chapterId, anchorId) => { if (activeChapterId !== chapterId) setActiveChapterId(chapterId); setScrollToAnchor(anchorId); }} 
-              onUpdateChapters={(chapters) => setProject(p => ({ ...p, chapters }))} 
-            />
-          </div>
-        )}
-
-        <div className="flex-1 bg-[#F5F5F7] relative overflow-hidden">
-          {currentView === 'files' && (
-            <FilesView 
-                onProjectUpdate={(updates) => setProject(prev => ({ ...prev, ...updates }))}
-                onChaptersLoaded={(newChapters, firstId) => {
-                    setProject(prev => ({ ...prev, chapters: newChapters }));
-                    setActiveChapterId(firstId);
-                    setCurrentView('chapters');
-                }}
-            />
           )}
-
-          {currentView === 'structure' && (
-            <StructureView project={project} onUpdateProject={(updates) => setProject(prev => ({ ...prev, ...updates }))} />
-          )}
-
-          {currentView === 'metadata' && (
-            <MetadataView 
-                metadata={project.metadata}
-                onUpdate={(newMetadata) => setProject(p => ({ ...p, metadata: newMetadata }))}
-            />
-          )}
-
-          {currentView === 'styles' && (
-            <StylesView 
-                project={project}
-                activeChapter={activeChapter}
-                onUpdateProject={(updates) => setProject(p => ({ ...p, ...updates }))}
-            />
-          )}
-
-          {currentView === 'images' && (
-            <ImagesView 
-                images={project.images}
-                onUpdateImages={(newImages) => setProject(p => ({ ...p, images: newImages }))}
-            />
-          )}
-
-          {currentView === 'cover' && (
-            <CoverGenerator 
-               project={project} 
-               onUpdateCover={(cover) => setProject(p => ({ ...p, cover }))} 
-               onUpdateCoverCSS={(css) => setProject(p => ({ ...p, coverCustomCSS: css }))}
-               onUpdateCoverDesign={(design) => setProject(p => ({ ...p, coverDesign: design }))}
-             />
-          )}
-
-          {currentView === 'chapters' && (
-            activeChapter ? (
-                <Editor 
-                    key={activeChapter.id} 
-                    content={activeChapter.content} 
-                    onContentChange={updateChapterContent} 
-                    onSplitChapter={handleSplitChapter} 
-                    project={project} 
-                    scrollToId={scrollToAnchor} 
-                />
-            ) : (
-                <div className="flex flex-col items-center justify-center h-full text-gray-300">
-                    <BookOpen size={64} className="mb-4 opacity-20" />
-                    <p>请选择一个章节</p>
-                </div>
-            )
+          {saveStatus === 'saved' && (
+            <div className="flex items-center text-xs text-green-600 bg-white/70 backdrop-blur-md py-1.5 px-3 rounded-full shadow-md animate-in fade-in">
+              <CheckCircle2 size={14} className="mr-2"/>
+              已保存
+            </div>
           )}
         </div>
       </main>
     </div>
   );
 };
+
 export default App;

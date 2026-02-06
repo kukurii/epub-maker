@@ -1,5 +1,7 @@
+
+
 import React, { useMemo, useState, useEffect } from 'react';
-import { ProjectData, ExtraFile } from '../../types';
+import { ProjectData, ExtraFile, PRESET_STYLES } from '../../types';
 import { 
   Folder, 
   FileText, 
@@ -12,9 +14,13 @@ import {
   Trash2,
   FilePlus,
   Database,
-  Eye
+  Eye,
+  CheckCircle2,
+  Info,
+  Circle
 } from 'lucide-react';
 
+// Define StructureViewProps interface
 interface StructureViewProps {
   project: ProjectData;
   onUpdateProject: (updates: Partial<ProjectData>) => void;
@@ -28,6 +34,7 @@ interface FileNode {
   children?: FileNode[];
   sizeBytes?: number; // Raw bytes
   isEditable?: boolean;
+  isActive?: boolean;
 }
 
 // Helper to format bytes
@@ -83,7 +90,12 @@ const FileTreeItem: React.FC<{
           )}
         </span>
         <span className="mr-2 flex-shrink-0">{getIcon()}</span>
-        <span className="truncate flex-1">{node.name}</span>
+        <span className="truncate flex-1 flex items-center">
+            {node.name}
+            {node.fileType === 'css' && node.isActive && (
+                <span className="ml-2 w-1.5 h-1.5 bg-blue-500 rounded-full animate-pulse" title="已激活"></span>
+            )}
+        </span>
         {node.type === 'file' && (
              <span className={`ml-2 text-[10px] ${selectedId === node.id ? 'text-blue-400' : 'text-gray-300 group-hover:text-gray-400'}`}>
                  {formatSize(node.sizeBytes)}
@@ -115,6 +127,20 @@ const StructureView: React.FC<StructureViewProps> = ({ project, onUpdateProject 
       const base64 = dataUrl.split(',')[1] || '';
       return Math.floor((base64.length * 3) / 4) - ((base64.match(/=/g) || []).length);
   };
+
+  const CUSTOM_CSS_MARKER = '/* --- 自定义样式开始 --- */';
+
+  // Compute merged style content for real-time reflection
+  const mergedMainCss = useMemo(() => {
+    const isPresetActive = project.isPresetStyleActive !== false;
+    
+    if (isPresetActive) {
+        const activeStyle = PRESET_STYLES.find(s => s.id === project.activeStyleId) || PRESET_STYLES[0];
+        return `/* 预设主题: ${activeStyle.name} (由样式面板控制) */\n${activeStyle.css}\n\n${CUSTOM_CSS_MARKER}\n${project.customCSS}`;
+    } else {
+        return `/* 预设主题已停用。下方仅为您的自定义 CSS。 */\n\n${CUSTOM_CSS_MARKER}\n${project.customCSS}`;
+    }
+  }, [project.activeStyleId, project.customCSS, project.isPresetStyleActive]);
 
   // Memoize structure calculation
   const { structure, totalSize } = useMemo(() => {
@@ -150,7 +176,7 @@ const StructureView: React.FC<StructureViewProps> = ({ project, onUpdateProject 
 
     // 2. Chapters
     const chapters: FileNode[] = (project.chapters || []).map((c, idx) => {
-        const size = getByteSize(c.content); // Simplified, doesn't account for full HTML wrapper overhead in export
+        const size = getByteSize(c.content);
         total += size;
         return {
           id: `chapter-${idx}`,
@@ -172,7 +198,8 @@ const StructureView: React.FC<StructureViewProps> = ({ project, onUpdateProject 
             type: 'file',
             fileType: f.type === 'css' ? 'css' : 'xml',
             sizeBytes: size,
-            isEditable: true
+            isEditable: true,
+            isActive: f.isActive !== false
         };
     });
     
@@ -189,13 +216,13 @@ const StructureView: React.FC<StructureViewProps> = ({ project, onUpdateProject 
     // OEBPS Folder Children
     const opfSize = 2000; // approx
     const ncxSize = 1000; // approx
-    const cssSize = getByteSize(project.customCSS || '');
+    const cssSize = getByteSize(mergedMainCss);
     total += opfSize + ncxSize + cssSize;
 
     const oebpsChildren: FileNode[] = [
       { id: 'opf', name: 'content.opf', type: 'file', fileType: 'opf', sizeBytes: opfSize, isEditable: false },
       { id: 'ncx', name: 'toc.ncx', type: 'file', fileType: 'ncx', sizeBytes: ncxSize, isEditable: false },
-      { id: 'style-css', name: 'style.css (Custom)', type: 'file', fileType: 'css', sizeBytes: cssSize, isEditable: true },
+      { id: 'style-css', name: 'style.css (Merged)', type: 'file', fileType: 'css', sizeBytes: cssSize, isEditable: true, isActive: true },
       ...extraFileNodes,
       ...chapters,
     ];
@@ -234,7 +261,7 @@ const StructureView: React.FC<StructureViewProps> = ({ project, onUpdateProject 
     };
     
     return { structure: root, totalSize: total };
-  }, [project]);
+  }, [project, mergedMainCss]);
 
   // Find the actual node object based on ID (helper)
   const findNode = (id: string, nodes: FileNode[]): FileNode | null => {
@@ -259,7 +286,7 @@ const StructureView: React.FC<StructureViewProps> = ({ project, onUpdateProject 
           let newPreviewUrl = null;
 
           if (selectedNodeId === 'style-css') {
-              content = project.customCSS || '';
+              content = mergedMainCss;
               editable = true;
               found = true;
           } else if (selectedNodeId.startsWith('chapter-')) {
@@ -295,13 +322,20 @@ const StructureView: React.FC<StructureViewProps> = ({ project, onUpdateProject 
       } else {
           setPreviewUrl(null);
       }
-  }, [selectedNodeId, project]); 
+  }, [selectedNodeId, project.chapters, project.extraFiles, project.cover, project.images, mergedMainCss]); 
 
   const handleSave = () => {
       if (!selectedNodeId) return;
 
       if (selectedNodeId === 'style-css') {
-          onUpdateProject({ customCSS: editorContent });
+          // Attempt to extract only the custom part if marker is present
+          if (editorContent.includes(CUSTOM_CSS_MARKER)) {
+              const customPart = editorContent.split(CUSTOM_CSS_MARKER)[1].trim();
+              onUpdateProject({ customCSS: customPart });
+          } else {
+              // Fallback if marker was deleted
+              onUpdateProject({ customCSS: editorContent });
+          }
       } else if (selectedNodeId.startsWith('chapter-')) {
           const chapterIndex = parseInt(selectedNodeId.split('-')[1]);
           const newChapters = [...project.chapters];
@@ -317,6 +351,14 @@ const StructureView: React.FC<StructureViewProps> = ({ project, onUpdateProject 
       setIsDirty(false);
   };
 
+  const toggleFileActive = () => {
+      if (selectedNodeId && selectedNodeId.startsWith('extra-')) {
+          const extraId = selectedNodeId.replace('extra-', '');
+          const newExtras = project.extraFiles ? project.extraFiles.map(f => f.id === extraId ? { ...f, isActive: !f.isActive } : f) : [];
+          onUpdateProject({ extraFiles: newExtras });
+      }
+  };
+
   const handleAddFile = () => {
       let name = prompt("输入新 CSS 文件名 (例如: dark-theme.css)", "custom.css");
       if (!name) return;
@@ -326,7 +368,6 @@ const StructureView: React.FC<StructureViewProps> = ({ project, onUpdateProject 
           name += '.css';
       }
 
-      // Check duplicates
       if (project.extraFiles?.some(f => f.filename === name)) {
           alert('文件名已存在');
           return;
@@ -336,13 +377,13 @@ const StructureView: React.FC<StructureViewProps> = ({ project, onUpdateProject 
           id: Date.now().toString(),
           filename: name,
           content: '/* Custom CSS */\n',
-          type: 'css'
+          type: 'css',
+          isActive: true
       };
       
       const updatedFiles = [...(project.extraFiles || []), newFile];
       onUpdateProject({ extraFiles: updatedFiles });
       
-      // Auto-select the newly created file
       setTimeout(() => {
           setSelectedNodeId(`extra-${newFile.id}`);
       }, 100);
@@ -357,6 +398,30 @@ const StructureView: React.FC<StructureViewProps> = ({ project, onUpdateProject 
               setSelectedNodeId(null);
           }
       }
+  };
+
+  // Live CSS Preview Component
+  const CSSPreview = ({ css }: { css: string }) => {
+      const iframeSrc = `<!DOCTYPE html><html lang="zh"><head><meta charset="utf-8"><style>
+        body { padding: 20px; font-family: sans-serif; background: #fff; color: #333; }
+        .preview-box { border: 1px solid #eee; padding: 20px; border-radius: 8px; }
+        ${css}
+      </style></head><body>
+        <div class="preview-box">
+          <h1>示例章节标题</h1>
+          <p>这是一段用于预览样式的正文内容。通过这段文字，您可以查看段落的行高、字体颜色以及首行缩进等效果。</p>
+          <blockquote>这是一个引用块（Blockquote）的样式演示。</blockquote>
+          <p>下方是一段包含<strong>加粗</strong>和<em>斜体</em>的文字。</p>
+        </div>
+      </body></html>`;
+      return (
+          <div className="flex-1 border-l border-gray-200 bg-white overflow-hidden flex flex-col">
+              <div className="p-3 bg-gray-50 border-b border-gray-200 text-[10px] font-bold text-gray-400 uppercase tracking-widest flex items-center">
+                  <Eye size={12} className="mr-2"/> 实时渲染效果
+              </div>
+              <iframe title="CSS Live Preview" srcDoc={iframeSrc} className="w-full h-full border-none" />
+          </div>
+      );
   };
 
   return (
@@ -391,8 +456,8 @@ const StructureView: React.FC<StructureViewProps> = ({ project, onUpdateProject 
                  <span>预估总大小 (解压后)</span>
                  <span className="text-gray-800">{formatSize(totalSize)}</span>
              </div>
-             <div className="text-[10px] text-gray-400">
-                 提示: 在此新建的 CSS 会自动链接到所有章节。
+             <div className="text-[10px] text-gray-400 leading-relaxed">
+                 提示: 只有处于“激活”状态的 CSS 文件才会被链接到 EPUB 章节中。
              </div>
           </div>
       </div>
@@ -407,6 +472,21 @@ const StructureView: React.FC<StructureViewProps> = ({ project, onUpdateProject 
                             {selectedNode.name}
                         </span>
                         {isDirty && <span className="ml-3 text-[10px] bg-yellow-100 text-yellow-700 px-2 py-0.5 rounded-full font-medium">未保存</span>}
+                        
+                        {selectedNode.fileType === 'css' && selectedNodeId.startsWith('extra-') && (
+                            <div className="ml-6 flex items-center">
+                                <label className="flex items-center cursor-pointer group">
+                                    <div className="relative">
+                                        <input type="checkbox" className="sr-only" checked={selectedNode.isActive} onChange={toggleFileActive} />
+                                        <div className={`w-8 h-4 rounded-full shadow-inner transition-colors ${selectedNode.isActive ? 'bg-blue-500' : 'bg-gray-300'}`}></div>
+                                        <div className={`absolute top-0.5 left-0.5 w-3 h-3 bg-white rounded-full shadow transition-transform ${selectedNode.isActive ? 'translate-x-4' : ''}`}></div>
+                                    </div>
+                                    <span className="ml-2 text-[10px] font-bold text-gray-500 group-hover:text-blue-500 transition-colors uppercase">
+                                        {selectedNode.isActive ? '已激活' : '已停用'}
+                                    </span>
+                                </label>
+                            </div>
+                        )}
                     </div>
                     <div className="flex items-center space-x-2">
                         {selectedNodeId.startsWith('extra-') && (
@@ -427,16 +507,36 @@ const StructureView: React.FC<StructureViewProps> = ({ project, onUpdateProject 
                         </button>
                     </div>
                 </div>
-                <div className="flex-1 relative">
-                    <textarea 
-                        className="absolute inset-0 w-full h-full p-6 font-mono text-sm leading-relaxed bg-[#1e1e1e] text-[#d4d4d4] resize-none focus:outline-none"
-                        spellCheck={false}
-                        value={editorContent}
-                        onChange={(e) => {
-                            setEditorContent(e.target.value);
-                            setIsDirty(true);
-                        }}
-                    />
+                <div className="flex-1 flex overflow-hidden">
+                    <div className="flex-1 relative border-r border-gray-200 bg-white">
+                        <textarea 
+                            className="absolute inset-0 w-full h-full p-6 font-mono text-sm leading-relaxed bg-white text-gray-800 resize-none focus:outline-none scrollbar-thin"
+                            spellCheck={false}
+                            value={editorContent}
+                            onChange={(e) => {
+                                setEditorContent(e.target.value);
+                                setIsDirty(true);
+                            }}
+                        />
+                    </div>
+                    {selectedNode.fileType === 'css' && (
+                        <div className="w-1/3 flex flex-col animate-in slide-in-from-right-2 duration-300">
+                            {selectedNode.isActive ? (
+                                <div className="flex-1 flex flex-col items-center justify-center p-8 text-center bg-gray-50/50">
+                                    <div className="w-12 h-12 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center mb-4">
+                                        <CheckCircle2 size={24}/>
+                                    </div>
+                                    <h3 className="text-sm font-bold text-gray-800 mb-2">样式已应用</h3>
+                                    <p className="text-xs text-gray-500 leading-relaxed px-4">
+                                        该 CSS 文件已处于激活状态。您可以在“样式主题”视图中查看它与主样式的最终融合效果。
+                                    </p>
+                                    <button onClick={toggleFileActive} className="mt-6 text-[10px] font-bold text-blue-500 hover:underline">暂时停用此样式</button>
+                                </div>
+                            ) : (
+                                <CSSPreview css={editorContent} />
+                            )}
+                        </div>
+                    )}
                 </div>
               </>
           ) : (

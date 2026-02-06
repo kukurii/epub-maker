@@ -1,7 +1,8 @@
+
 import React, { useRef, useState } from 'react';
 import * as htmlToImage from 'html-to-image';
 import { ProjectData, CoverDesign } from '../types';
-import { Upload, Camera, Type, Check, Code, Loader2, Sparkles, Library, X, ChevronDown, ChevronUp, Palette, Plus, Settings2 } from 'lucide-react';
+import { Upload, Camera, Type, Check, Code, Loader2, Sparkles, Library, X, ChevronDown, ChevronUp, Palette, Plus, Settings2, Info } from 'lucide-react';
 import { GoogleGenAI } from '@google/genai';
 
 interface CoverGeneratorProps {
@@ -271,12 +272,23 @@ const CoverGenerator: React.FC<CoverGeneratorProps> = ({ project, onUpdateCover,
       setActiveSnippet(null);
   };
 
+  const handleToggleSeries = () => {
+    if (onUpdateCoverDesign) {
+      onUpdateCoverDesign({
+        ...project.coverDesign!,
+        showSeries: !project.coverDesign?.showSeries
+      });
+    }
+  };
+
   const templates = [
-    { name: "商务蓝", bg: 'bg-gradient-to-br from-blue-900 to-gray-900', text: 'text-white', font: 'font-serif' },
-    { name: "文艺粉", bg: 'bg-gradient-to-tr from-rose-100 to-teal-100', text: 'text-gray-800', font: 'font-sans' },
-    { name: "极客黑", bg: 'bg-gray-800', text: 'text-yellow-500', font: 'font-mono' },
-    { name: "经典白", bg: 'bg-white border-8 border-double border-gray-900', text: 'text-black', font: 'font-serif' },
+    { name: "商务蓝", bg: 'bg-gradient-to-br from-blue-900 to-gray-900', text: 'text-white', font: 'font-serif', series: 'text-white/60' },
+    { name: "文艺粉", bg: 'bg-gradient-to-tr from-rose-100 to-teal-100', text: 'text-gray-800', font: 'font-sans', series: 'text-gray-500' },
+    { name: "极客黑", bg: 'bg-gray-800', text: 'text-yellow-500', font: 'font-mono', series: 'text-yellow-500/50' },
+    { name: "经典白", bg: 'bg-white border-8 border-double border-gray-900', text: 'text-black', font: 'font-serif', series: 'text-gray-400' },
   ];
+
+  const currentTemplate = templates[activeTemplate];
 
   return (
     <div className="h-full flex flex-col md:flex-row p-6 gap-6 bg-[#F5F5F7] overflow-hidden relative">
@@ -324,7 +336,7 @@ const CoverGenerator: React.FC<CoverGeneratorProps> = ({ project, onUpdateCover,
           <div className="space-y-5">
             <div>
                 <label className="block text-sm font-semibold text-gray-600 mb-3">封面模式</label>
-                <div className="flex items-center space-x-1 bg-gray-100 p-1 rounded-lg">
+                <div className="flex items-center space-x-1 bg-gray-100 p-1 rounded-lg mb-4">
                     <button
                         onClick={() => setShowTextOnCover(true)}
                         className={`w-full text-center px-4 py-1.5 rounded-md text-sm font-medium transition-colors ${showTextOnCover ? 'bg-white shadow-sm text-blue-600' : 'text-gray-500 hover:bg-gray-200/50'}`}
@@ -338,6 +350,19 @@ const CoverGenerator: React.FC<CoverGeneratorProps> = ({ project, onUpdateCover,
                         纯图封面
                     </button>
                 </div>
+                
+                {showTextOnCover && (
+                  <div className="flex items-center justify-between p-3 bg-blue-50/50 rounded-xl border border-blue-100">
+                      <div className="flex flex-col">
+                        <span className="text-xs font-bold text-gray-700">显示系列丛书</span>
+                        {!project.metadata.series && <span className="text-[10px] text-gray-400 flex items-center mt-0.5"><Info size={10} className="mr-1"/> 需在“书籍信息”中填写</span>}
+                      </div>
+                      <label className="relative inline-flex items-center cursor-pointer">
+                        <input type="checkbox" className="sr-only peer" checked={project.coverDesign?.showSeries || false} onChange={handleToggleSeries} disabled={!project.metadata.series} />
+                        <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+                      </label>
+                  </div>
+                )}
             </div>
             
             <div>
@@ -352,7 +377,7 @@ const CoverGenerator: React.FC<CoverGeneratorProps> = ({ project, onUpdateCover,
             <div className="bg-gradient-to-br from-blue-50 to-indigo-50 p-4 rounded-xl border border-blue-100 space-y-3">
                 <h4 className="text-sm font-semibold text-gray-600 flex items-center"><Sparkles size={16} className="mr-2 text-yellow-500"/> AI 封面设计</h4>
                 <textarea className="w-full h-20 bg-white/70 text-sm p-3 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none shadow-inner" placeholder="例如：黑暗奇幻风格，标题用破碎的哥特字体..." value={aiCoverPrompt} onChange={(e) => setAiCoverPrompt(e.target.value)} />
-                <button onClick={handleAiGenerateCoverCss} disabled={isAiGenerating || !aiCoverPrompt} className="w-full bg-blue-600 hover:bg-blue-700 text-white py-2 px-4 rounded-lg flex items-center justify-center transition-all shadow-md shadow-blue-500/20 active:scale-95 font-semibold text-xs disabled:bg-blue-300 disabled:cursor-not-allowed">
+                <button onClick={handleAiGenerateCoverCss} disabled={isAiGenerating || !aiCoverPrompt} className="w-full bg-blue-600 hover:bg-blue-700 text-white py-2.5 px-4 rounded-lg flex items-center justify-center transition-all shadow-md shadow-blue-500/20 active:scale-95 font-semibold text-xs disabled:bg-blue-300 disabled:cursor-not-allowed">
                     {isAiGenerating ? <Loader2 size={14} className="mr-2 animate-spin" /> : <Sparkles size={14} className="mr-2" />}
                     {isAiGenerating ? '生成中...' : '生成样式'}
                 </button>
@@ -490,7 +515,7 @@ const CoverGenerator: React.FC<CoverGeneratorProps> = ({ project, onUpdateCover,
             <div 
               id="cover-preview"
               ref={coverRef}
-              className={`w-[320px] h-[480px] shadow-2xl flex flex-col items-center justify-center p-8 text-center transition-all duration-300 relative overflow-hidden ${!selectedBgImage ? templates[activeTemplate].bg : ''}`}
+              className={`w-[320px] h-[480px] shadow-2xl flex flex-col items-center justify-center p-8 text-center transition-all duration-300 relative overflow-hidden ${!selectedBgImage ? currentTemplate.bg : ''}`}
               style={{ minWidth: '320px', minHeight: '480px', backgroundImage: selectedBgImage ? `url(${selectedBgImage})` : undefined, backgroundSize: 'cover', backgroundPosition: 'center' }}
             >
               <style>{project.coverCustomCSS}</style>
@@ -498,11 +523,16 @@ const CoverGenerator: React.FC<CoverGeneratorProps> = ({ project, onUpdateCover,
 
               {showTextOnCover && (
                 <>
-                  <h1 id="cover-title" className={`text-4xl font-bold mb-6 break-words w-full z-10 ${templates[activeTemplate].text} ${templates[activeTemplate].font} leading-tight`}>
+                  {project.coverDesign?.showSeries && project.metadata.series && (
+                    <div id="cover-series" className={`text-[10px] uppercase tracking-[0.3em] font-bold mb-3 z-10 ${currentTemplate.series} ${currentTemplate.font}`}>
+                        {project.metadata.series}
+                    </div>
+                  )}
+                  <h1 id="cover-title" className={`text-4xl font-bold mb-6 break-words w-full z-10 ${currentTemplate.text} ${currentTemplate.font} leading-tight`}>
                     {project.metadata.title || "Book Title"}
                   </h1>
-                  <div className={`w-16 h-1 mb-8 z-10 ${templates[activeTemplate].text === 'text-white' ? 'bg-white/80' : 'bg-gray-800/80'}`}></div>
-                  <h2 id="cover-author" className={`text-xl z-10 ${templates[activeTemplate].text} ${templates[activeTemplate].font}`}>
+                  <div className={`w-16 h-1 mb-8 z-10 ${currentTemplate.text === 'text-white' ? 'bg-white/80' : 'bg-gray-800/80'}`}></div>
+                  <h2 id="cover-author" className={`text-xl z-10 ${currentTemplate.text} ${currentTemplate.font}`}>
                     {project.metadata.creator || "Author Name"}
                   </h2>
                 </>

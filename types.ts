@@ -1,4 +1,5 @@
 
+
 export interface TocItem {
   id: string; // The HTML id attribute
   text: string;
@@ -53,13 +54,16 @@ export interface CoverDesign {
     textShadow: boolean;
     borderStyle: string;
     backgroundCSS: string;
+    showSeries: boolean; // 新增：是否在封面上显示系列名
 }
 
+// Added isActive property to fix type error in components/views/StructureView.tsx
 export interface ExtraFile {
   id: string;
   filename: string;
   content: string;
   type: 'css' | 'text' | 'xml'; 
+  isActive?: boolean;
 }
 
 export interface ProjectData {
@@ -71,6 +75,7 @@ export interface ProjectData {
   coverCustomCSS?: string; // New: Custom CSS for cover generation
   coverDesign?: CoverDesign;
   activeStyleId: string;
+  isPresetStyleActive?: boolean; // New: Flag to enable/disable preset styles
   customCSS: string;
 }
 

@@ -1,3 +1,5 @@
+
+
 import JSZip from 'jszip';
 import saveAs from 'file-saver';
 import { ProjectData, PRESET_STYLES, Chapter, Metadata, ImageAsset, ExtraFile } from '../types';
@@ -41,13 +43,16 @@ export const generateEpub = async (project: ProjectData) => {
 
   // --- CSS ---
   const activeStyle = PRESET_STYLES.find(s => s.id === project.activeStyleId) || PRESET_STYLES[0];
-  const finalCss = `${activeStyle.css}\n\n/* Custom CSS */\n${project.customCSS}`;
+  const presetCss = project.isPresetStyleActive !== false ? activeStyle.css : '/* Preset style disabled by user. */';
+  const finalCss = `${presetCss}\n\n/* Custom CSS */\n${project.customCSS}`;
   oebps.file('style.css', finalCss);
 
   // --- Extra Files (Custom CSS created in Structure View) ---
   const extraCssLinks: string[] = [];
   if (project.extraFiles) {
       project.extraFiles.forEach(file => {
+          // Only include active extra files in the final EPUB
+          if (file.isActive === false) return;
           oebps.file(file.filename, file.content);
           if (file.type === 'css') {
               extraCssLinks.push(`<link rel="stylesheet" type="text/css" href="${file.filename}"/>`);
@@ -82,7 +87,6 @@ export const generateEpub = async (project: ProjectData) => {
   }
 
   // Other images map
-  // BUG FIX: Use both ID and Name maps to handle collisions and legacy content
   const imageMapByName = new Map<string, string>();
   const imageMapById = new Map<string, string>();
   
@@ -94,18 +98,14 @@ export const generateEpub = async (project: ProjectData) => {
     else if (img.type.includes('gif')) ext = 'gif';
     else if (img.type.includes('webp')) ext = 'webp';
 
-    // Use ID for uniqueness in the EPUB package
     const uniqueFilename = `img_${img.id}.${ext}`;
     
-    // Fallback map
     imageMapByName.set(img.name, uniqueFilename);
-    // Primary map
     imageMapById.set(img.id, uniqueFilename);
     
     oebps.file(`images/${uniqueFilename}`, imgData, { base64: true });
   });
 
-  // BUG FIX: Use DOMParser to safely parse and replace attributes
   const processContent = (htmlContent: string) => {
      const parser = new DOMParser();
      const doc = parser.parseFromString(htmlContent, 'text/html');
@@ -128,7 +128,6 @@ export const generateEpub = async (project: ProjectData) => {
          }
      });
      
-     // Serialize body content
      return fixXHTML(doc.body.innerHTML);
   };
 
@@ -148,8 +147,6 @@ export const generateEpub = async (project: ProjectData) => {
   ${processedContent}
 </body>
 </html>`;
-    // If the chapter has a custom ID that is a valid filename, use it? 
-    // For now, sticking to chapter_index for safety and simplicity in manifest.
     oebps.file(`chapter_${index}.xhtml`, chapterContent);
   });
 
@@ -178,37 +175,30 @@ export const generateEpub = async (project: ProjectData) => {
   oebps.file('toc.xhtml', tocXhtml);
 
   // --- OPF (Package File) ---
-  const uid = `urn:uuid:${Date.now()}`; // Simple UID
+  const uid = `urn:uuid:${Date.now()}`;
   
   let manifestItems = '';
   let spineItems = '';
 
-  // 1. Cover
   if (project.cover) {
     manifestItems += `<item id="cover-image" href="${coverFilename}" media-type="${project.cover.startsWith('data:image/png') ? 'image/png' : 'image/jpeg'}"/>\n`;
     manifestItems += `<item id="cover" href="cover.xhtml" media-type="application/xhtml+xml"/>\n`;
     spineItems += `<itemref idref="cover"/>\n`;
   }
 
-  // 2. Visual TOC
   manifestItems += `<item id="toc" href="toc.xhtml" media-type="application/xhtml+xml"/>\n`;
-  
-  // 3. Styles & NCX
   manifestItems += `<item id="style" href="style.css" media-type="text/css"/>\n`;
   manifestItems += `<item id="ncx" href="toc.ncx" media-type="application/x-dtbncx+xml"/>\n`;
 
-  // 4. Extra Files (Manifest)
   if (project.extraFiles) {
       project.extraFiles.forEach(file => {
+          // Only manifest active extra files
+          if (file.isActive === false) return;
           const mediaType = file.type === 'css' ? 'text/css' : 'application/xml';
           manifestItems += `<item id="extra_${file.id}" href="${file.filename}" media-type="${mediaType}"/>\n`;
       });
   }
 
-  // 5. Content Images
-  // We iterate through mapped values to ensure we only include used unique files
-  const uniqueFiles = new Set(imageMapById.values());
-  
   project.images.forEach((img) => {
     const uniqueName = imageMapById.get(img.id);
     if (uniqueName) {
@@ -216,21 +206,17 @@ export const generateEpub = async (project: ProjectData) => {
     }
   });
 
-  // 6. Chapters
   project.chapters.forEach((_, index) => {
     manifestItems += `<item id="chapter_${index}" href="chapter_${index}.xhtml" media-type="application/xhtml+xml"/>\n`;
   });
 
-  // Spine Construction
-  spineItems += `<itemref idref="toc"/>\n`; // TOC usually comes after cover
+  spineItems += `<itemref idref="toc"/>\n`;
   project.chapters.forEach((_, index) => {
     spineItems += `<itemref idref="chapter_${index}"/>\n`;
   });
 
-  // Metadata Construction
   let extraMetadata = '';
   if (project.metadata.series) {
-      // Calibre style series metadata
       extraMetadata += `<meta name="calibre:series" content="${project.metadata.series}" />\n`;
   }
   if (project.metadata.subjects && project.metadata.subjects.length > 0) {
@@ -264,7 +250,7 @@ export const generateEpub = async (project: ProjectData) => {
 
   oebps.file('content.opf', opfContent);
 
-  // --- NCX (Logical Navigation) ---
+  // --- NCX ---
   let navPoints = '';
   let playOrder = 1;
 
@@ -282,7 +268,7 @@ export const generateEpub = async (project: ProjectData) => {
       <content src="toc.xhtml"/>
     </navPoint>`;
 
-  let currentLevel = 0; // 0 = root
+  let currentLevel = 0; 
 
   project.chapters.forEach((c, i) => {
     if (c.level === 1) {
@@ -335,12 +321,10 @@ export const generateEpub = async (project: ProjectData) => {
 
   oebps.file('toc.ncx', ncxContent);
 
-  // Generate
   const content = await zip.generateAsync({ type: 'blob' });
   saveAs(content, `${project.metadata.title || 'ebook'}.epub`);
 };
 
-// Helper: Parse TXT to Chapters with optional custom regex
 export const parseTxtToChapters = (text: string, customRegex?: string): { title: string, content: string, level: 1 | 2 }[] => {
   const lines = text.split('\n');
   const chapters: { title: string, content: string, level: 1 | 2 }[] = [];
@@ -348,10 +332,8 @@ export const parseTxtToChapters = (text: string, customRegex?: string): { title:
   let currentTitle = 'Start';
   let currentContent: string[] = [];
 
-  // Default Regex
   let chapterRegexStr = "^\\s*(Chapter\\s+\\d+|第[0-9一二三四五六七八九十百千]+[章回节]|序章|尾声|引子)";
   
-  // Use custom if provided and valid
   if (customRegex && customRegex.trim().length > 0) {
       chapterRegexStr = customRegex;
   }
@@ -361,13 +343,12 @@ export const parseTxtToChapters = (text: string, customRegex?: string): { title:
       chapterRegex = new RegExp(chapterRegexStr, 'i');
   } catch (e) {
       console.error("Invalid Regex provided, falling back to default.", e);
-      chapterRegex = /^\s*(Chapter\s+\d+|第[0-9一二三四五六七八九十百千]+[章回节]|序章|尾声|引子)/i;
+      chapterRegex = /^\s*(Chapter\\s+\\d+|第[0-9一二三四五六七八九十百千]+[章回节]|序章|尾声|引子)/i;
   }
 
   const flushChapter = () => {
     if (currentContent.length > 0 || currentTitle !== 'Start') {
         const body = currentContent.map(l => `<p>${l}</p>`).join('');
-        // Inject Title as H1
         const contentWithTitle = `<h1>${currentTitle}</h1>\n${body}`;
         chapters.push({
           title: currentTitle,
@@ -400,7 +381,6 @@ export const parseTxtToChapters = (text: string, customRegex?: string): { title:
   return chapters;
 };
 
-
 const normalizePath = (path: string) => {
     const parts = path.split('/');
     const result: string[] = [];
@@ -418,7 +398,6 @@ export const parseEpub = async (file: File): Promise<Partial<ProjectData>> => {
     const zip = await JSZip.loadAsync(file);
     const parser = new DOMParser();
 
-    // 1. Find OPF path from container.xml
     const containerFile = zip.file('META-INF/container.xml');
     if (!containerFile) throw new Error('Invalid EPUB: META-INF/container.xml not found.');
     const containerXmlText = await containerFile.async('text');
@@ -428,13 +407,11 @@ export const parseEpub = async (file: File): Promise<Partial<ProjectData>> => {
     
     const opfDir = opfPath.substring(0, opfPath.lastIndexOf('/'));
 
-    // 2. Parse OPF file
     const opfFile = zip.file(opfPath);
     if (!opfFile) throw new Error(`Invalid EPUB: OPF file not found at ${opfPath}.`);
     const opfXmlText = await opfFile.async('text');
     const opfDoc = parser.parseFromString(opfXmlText, 'application/xml');
 
-    // 3. Extract Metadata
     const metadataEl = opfDoc.getElementsByTagName('metadata')[0];
     const dc = (tag: string) => metadataEl.getElementsByTagNameNS('http://purl.org/dc/elements/1.1/', tag)[0]?.textContent?.trim() || '';
     const newMetadata: Metadata = {
@@ -448,10 +425,9 @@ export const parseEpub = async (file: File): Promise<Partial<ProjectData>> => {
         series: metadataEl.querySelector('meta[name="calibre:series"]')?.getAttribute('content') || '',
     };
     
-    // 4. Extract Manifest and process images
     const manifestItems = opfDoc.getElementsByTagName('item');
     const itemMap = new Map<string, { href: string; mediaType: string; zipPath: string }>();
-    const imagePathMap = new Map<string, {dataUrl: string, id: string}>();
+    const imagePathMap = new Map<string, ImageAsset>();
     const newImages: ImageAsset[] = [];
     const newExtraFiles: ExtraFile[] = [];
     let importedCustomCSS = '';
@@ -469,7 +445,7 @@ export const parseEpub = async (file: File): Promise<Partial<ProjectData>> => {
                 if (imageFile) {
                     const data = await imageFile.async('base64');
                     const dataUrl = `data:${mediaType};base64,${data}`;
-                    const assetId = Date.now().toString() + Math.random().toString(36).substr(2,5);
+                    const assetId = Date.now().toString(36) + Math.random().toString(36).substr(2, 6);
                     const asset: ImageAsset = {
                         id: assetId,
                         name: href.split('/').pop() || 'image',
@@ -477,14 +453,12 @@ export const parseEpub = async (file: File): Promise<Partial<ProjectData>> => {
                         type: mediaType
                     };
                     newImages.push(asset);
-                    imagePathMap.set(zipPath, { dataUrl, id: assetId });
+                    imagePathMap.set(zipPath, asset);
                 }
             } else if (mediaType === 'text/css') {
                 const cssFile = zip.file(zipPath);
                 if (cssFile) {
                     const text = await cssFile.async('text');
-                    // Heuristic: if it's named style.css or main.css, stick it in customCSS
-                    // Otherwise add to extraFiles
                     const filename = href.split('/').pop() || '';
                     if (filename.toLowerCase() === 'style.css' || filename.toLowerCase() === 'main.css' || filename.toLowerCase() === 'stylesheet.css') {
                         importedCustomCSS += text + '\n';
@@ -493,7 +467,8 @@ export const parseEpub = async (file: File): Promise<Partial<ProjectData>> => {
                             id: id,
                             filename: filename,
                             content: text,
-                            type: 'css'
+                            type: 'css',
+                            isActive: true
                         });
                     }
                 }
@@ -502,7 +477,6 @@ export const parseEpub = async (file: File): Promise<Partial<ProjectData>> => {
     });
     await Promise.all(manifestPromises);
 
-    // 5. Extract Spine and Chapters
     const spineItems = opfDoc.getElementsByTagName('itemref');
     const chapterPromises = Array.from(spineItems).map(async (spineItem, chapterIndex) => {
         const idref = spineItem.getAttribute('idref');
@@ -515,7 +489,6 @@ export const parseEpub = async (file: File): Promise<Partial<ProjectData>> => {
                 const chapterHtml = await chapterFile.async('text');
                 const chapterDoc = parser.parseFromString(chapterHtml, 'text/html');
                 
-                // Replace image paths
                 const imagesInChapter = chapterDoc.querySelectorAll('img, image');
                 imagesInChapter.forEach(img => {
                     const srcAttr = img.tagName.toLowerCase() === 'img' ? 'src' : 'href';
@@ -526,11 +499,19 @@ export const parseEpub = async (file: File): Promise<Partial<ProjectData>> => {
                         const imageZipPath = normalizePath(`${chapterDir}/${decodedSrc}`);
 
                         if (imagePathMap.has(imageZipPath)) {
-                            const { dataUrl, id } = imagePathMap.get(imageZipPath)!;
-                            img.setAttribute(srcAttr, dataUrl); // Set data URL for preview
-                            img.setAttribute('data-id', id);    // Set ID for re-export mapping
-                            // Preserve filename in data-filename if we can guess it, but ID is primary now
-                            img.setAttribute('data-filename', imageZipPath.split('/').pop() || 'image'); 
+                            const asset = imagePathMap.get(imageZipPath)!;
+                            
+                            const getExtension = (type: string): string => {
+                                if (type.includes('png')) return 'png';
+                                if (type.includes('gif')) return 'gif';
+                                if (type.includes('webp')) return 'webp';
+                                return 'jpg';
+                            }
+                            const relativePath = `images/img_${asset.id}.${getExtension(asset.type)}`;
+
+                            img.setAttribute(srcAttr, relativePath);
+                            img.setAttribute('data-id', asset.id);
+                            img.setAttribute('data-filename', asset.name);
                         }
                     }
                 });
@@ -538,7 +519,7 @@ export const parseEpub = async (file: File): Promise<Partial<ProjectData>> => {
                 const title = chapterDoc.querySelector('h1, h2, title')?.textContent?.trim() || `Chapter ${chapterIndex + 1}`;
                 
                 return {
-                    id: Date.now().toString() + chapterIndex,
+                    id: Date.now().toString(36) + Math.random().toString(36).substr(2, 4) + chapterIndex,
                     title,
                     content: chapterDoc.body.innerHTML,
                     level: 1,
@@ -551,13 +532,12 @@ export const parseEpub = async (file: File): Promise<Partial<ProjectData>> => {
 
     const resolvedChapters = (await Promise.all(chapterPromises)).filter(Boolean) as Chapter[];
 
-    // 6. Extract Cover
     const coverId = opfDoc.querySelector('meta[name="cover"]')?.getAttribute('content');
     let coverDataUrl: string | null = null;
     if (coverId) {
         const coverItem = itemMap.get(coverId);
         if (coverItem) {
-            coverDataUrl = imagePathMap.get(coverItem.zipPath)?.dataUrl || null;
+            coverDataUrl = imagePathMap.get(coverItem.zipPath)?.data || null;
         }
     }
     

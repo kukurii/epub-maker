@@ -193,6 +193,8 @@ const StylesView: React.FC<StylesViewProps> = ({ project, activeChapter, onUpdat
       setShowApiKeyModal(false);
   };
 
+  const isPresetActive = project.isPresetStyleActive !== false;
+
   const handleAiGenerateCss = async () => {
     if (!aiPrompt || isAiGenerating) return;
     
@@ -210,6 +212,7 @@ const StylesView: React.FC<StylesViewProps> = ({ project, activeChapter, onUpdat
         const ai = new GoogleGenAI({ apiKey: keyToUse });
         
         const activeStyle = PRESET_STYLES.find(s => s.id === project.activeStyleId) || PRESET_STYLES[0];
+        const baseCssForContext = isPresetActive ? activeStyle.css : '/* No base theme active. Generate from scratch. */ body { font-family: sans-serif; }';
 
         const fullPrompt = `
         You are an expert ebook developer and designer specializing in CSS for EPUB 3 files.
@@ -231,7 +234,7 @@ const StylesView: React.FC<StylesViewProps> = ({ project, activeChapter, onUpdat
 
         Base CSS for context:
         \`\`\`css
-        ${activeStyle.css}
+        ${baseCssForContext}
         \`\`\`
 
         User's request: "${aiPrompt}"
@@ -265,6 +268,10 @@ const StylesView: React.FC<StylesViewProps> = ({ project, activeChapter, onUpdat
       setInfoSnippet(null);
   };
 
+  const handleTogglePresetStyle = () => {
+    onUpdateProject({ isPresetStyleActive: !isPresetActive });
+  };
+
   // Preview Logic
   let previewContent = '';
   const activeStyle = PRESET_STYLES.find(s => s.id === project.activeStyleId);
@@ -281,17 +288,29 @@ const StylesView: React.FC<StylesViewProps> = ({ project, activeChapter, onUpdat
 
   const safeCustomCSS = project.customCSS.replace(/<\/style>/gi, '<\\/style>');
   // Include Extra Files CSS
-  const extraCssContent = project.extraFiles?.filter(f => f.type === 'css').map(f => f.content).join('\n') || '';
+  const extraCssContent = project.extraFiles?.filter(f => f.type === 'css' && f.isActive !== false).map(f => f.content).join('\n') || '';
   const safeExtraCSS = extraCssContent.replace(/<\/style>/gi, '<\\/style>');
-
-  const iframeSrc = `<!DOCTYPE html><html lang="zh"><head><meta charset="utf-8"><style>html, body { margin: 0; padding: 0; min-height: 100%; width: 100%; box-sizing: border-box; } ${activeStyle?.css || ''} ${safeCustomCSS} ${safeExtraCSS}</style></head><body>${previewContent}</body></html>`;
+  
+  const presetCss = isPresetActive ? (activeStyle?.css || '') : '/* Preset style disabled */';
+  const iframeSrc = `<!DOCTYPE html><html lang="zh"><head><meta charset="utf-8"><style>html, body { margin: 0; padding: 0; min-height: 100%; width: 100%; box-sizing: border-box; } ${presetCss} ${safeCustomCSS} ${safeExtraCSS}</style></head><body>${previewContent}</body></html>`;
 
   return (
     <div className="flex h-full bg-[#F5F5F7] relative">
         <div className="w-96 flex-none flex flex-col border-r border-gray-200 bg-white p-6 overflow-y-auto space-y-8 z-10">
             <div>
-               <h2 className="text-xl font-bold mb-4 text-gray-800">预设主题</h2>
-               <div className="grid grid-cols-2 gap-3">
+               <div className="flex justify-between items-center mb-4">
+                 <h2 className="text-xl font-bold text-gray-800">预设主题</h2>
+                 <label className="flex items-center cursor-pointer">
+                    <span className={`mr-3 text-sm font-medium ${isPresetActive ? 'text-gray-900' : 'text-gray-400'}`}>
+                        {isPresetActive ? '已启用' : '已停用'}
+                    </span>
+                    <div className="relative">
+                        <input type="checkbox" className="sr-only peer" checked={isPresetActive} onChange={handleTogglePresetStyle} />
+                        <div className="w-11 h-6 bg-gray-200 rounded-full peer peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-0.5 after:left-[2px] after:bg-white after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+                    </div>
+                 </label>
+               </div>
+               <div className={`grid grid-cols-2 gap-3 transition-opacity ${!isPresetActive ? 'opacity-40 pointer-events-none' : ''}`}>
                    {PRESET_STYLES.map(style => (<button key={style.id} onClick={() => onUpdateProject({ activeStyleId: style.id })} className={`w-full text-center px-4 py-3 rounded-xl border-2 transition-all ${ project.activeStyleId === style.id ? 'border-blue-500 bg-blue-50 text-blue-700 font-bold shadow-sm' : 'border-gray-100 hover:border-gray-200 text-gray-600' }`}>{style.name}</button>))}
                </div>
             </div>

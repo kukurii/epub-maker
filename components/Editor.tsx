@@ -32,6 +32,52 @@ interface EditorProps {
   scrollToId?: string | null;
 }
 
+// --- Image Path Conversion Helpers ---
+
+const getUniqueImageFilename = (img: ImageAsset): string => {
+    if (!img) return 'unknown.jpg';
+    let ext = 'jpg';
+    if (img.type.includes('png')) ext = 'png';
+    else if (img.type.includes('gif')) ext = 'gif';
+    else if (img.type.includes('webp')) ext = 'webp';
+    return `img_${img.id}.${ext}`;
+};
+
+// Converts stored HTML (with relative paths) to editor-displayable HTML (with Base64)
+const contentToEditorHTML = (html: string, images: ImageAsset[]): string => {
+    if (!html || !images.length) return html;
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(html, 'text/html');
+    const imageMap = new Map<string, ImageAsset>(images.map(img => [img.id, img]));
+
+    doc.querySelectorAll('img[data-id]').forEach(imgEl => {
+        const id = imgEl.getAttribute('data-id');
+        if (id && imageMap.has(id)) {
+            imgEl.setAttribute('src', imageMap.get(id)!.data);
+        }
+    });
+    return doc.body.innerHTML;
+};
+
+// Converts editor HTML (with Base64) to storable HTML (with relative paths)
+const editorHTMLToContent = (html: string, images: ImageAsset[]): string => {
+    if (!html || !images.length) return html;
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(html, 'text/html');
+    const imageMap = new Map<string, ImageAsset>(images.map(img => [img.id, img]));
+
+    doc.querySelectorAll('img[data-id]').forEach(imgEl => {
+        const id = imgEl.getAttribute('data-id');
+        if (id && imageMap.has(id)) {
+            const image = imageMap.get(id)!;
+            const filename = getUniqueImageFilename(image);
+            imgEl.setAttribute('src', `images/${filename}`);
+        }
+    });
+    return doc.body.innerHTML;
+};
+
+
 const Editor: React.FC<EditorProps> = ({ content, onContentChange, onSplitChapter, project, scrollToId }) => {
   const editorRef = useRef<HTMLDivElement>(null);
   const [showFindBar, setShowFindBar] = useState(false);
@@ -55,11 +101,14 @@ const Editor: React.FC<EditorProps> = ({ content, onContentChange, onSplitChapte
 
   // Apply content on mount or switch
   useEffect(() => {
-    if (editorRef.current && editorRef.current.innerHTML !== content) {
-      editorRef.current.innerHTML = content;
-      updateStats(editorRef.current.innerText);
+    if (editorRef.current) {
+      const editorHTML = contentToEditorHTML(content, project.images);
+      if (editorRef.current.innerHTML !== editorHTML) {
+        editorRef.current.innerHTML = editorHTML;
+        updateStats(editorRef.current.innerText);
+      }
     }
-  }, [content]);
+  }, [content, project.images]);
 
   // --- Stats Logic ---
   const updateStats = (text: string) => {
@@ -110,10 +159,11 @@ const Editor: React.FC<EditorProps> = ({ content, onContentChange, onSplitChapte
         }
     });
 
-    const newContent = editorRef.current.innerHTML;
+    const newEditorHTML = editorRef.current.innerHTML;
+    const newContent = editorHTMLToContent(newEditorHTML, project.images);
     updateStats(editorRef.current.innerText);
     onContentChange(newContent, newTitle, subItems);
-  }, [onContentChange]);
+  }, [onContentChange, project.images]);
 
   const handleInput = () => {
     processContentUpdates();
@@ -172,7 +222,6 @@ const Editor: React.FC<EditorProps> = ({ content, onContentChange, onSplitChapte
   };
 
   const insertImage = (img: ImageAsset) => {
-    // BUG FIX: Added data-id to ensure uniqueness even if filenames are identical
     const html = `<img src="${img.data}" data-id="${img.id}" data-filename="${img.name}" alt="${img.name}" />`;
     // Restore focus before inserting
     editorRef.current?.focus();
@@ -206,9 +255,9 @@ const Editor: React.FC<EditorProps> = ({ content, onContentChange, onSplitChapte
         
         const div = document.createElement('div');
         div.appendChild(afterFragment);
-        const afterHtml = div.innerHTML;
         
-        const beforeHtml = editorRef.current.innerHTML;
+        const beforeHtml = editorHTMLToContent(editorRef.current.innerHTML, project.images);
+        const afterHtml = editorHTMLToContent(div.innerHTML, project.images);
 
         if (!afterHtml && !beforeHtml) return;
 
@@ -301,15 +350,19 @@ const Editor: React.FC<EditorProps> = ({ content, onContentChange, onSplitChapte
 
   // Gather extra CSS from extraFiles
   const extraCSS = project.extraFiles
-    ?.filter(f => f.type === 'css')
+    ?.filter(f => f.type === 'css' && f.isActive !== false)
     .map(f => f.content)
     .join('\n') || '';
 
-  const scopedCSS = useMemo(() => `
+  const scopedCSS = useMemo(() => {
+    const activeStyle = PRESET_STYLES.find(s => s.id === project.activeStyleId) || PRESET_STYLES[0];
+    const presetCss = project.isPresetStyleActive !== false ? activeStyle.css : 'body {}';
+
+    return `
     .editor-paper {
-       ${activeStyle.css.match(/body\s*{([^}]*)}/)?.[1] || ''}
+       ${presetCss.match(/body\s*{([^}]*)}/)?.[1] || ''}
     }
-    ${activeStyle.css
+    ${presetCss
        .replace(/body\s*{[^}]*}/, '')
        .replace(/(^|\})\s*([a-z0-9]+)/gi, '$1 .editor-paper $2')
     }
@@ -327,7 +380,7 @@ const Editor: React.FC<EditorProps> = ({ content, onContentChange, onSplitChapte
         outline-offset: 2px;
         box-shadow: 0 4px 15px rgba(0,0,0,0.1);
     }
-  `, [activeStyle.css, project.customCSS, extraCSS]);
+  `}, [project.activeStyleId, project.customCSS, extraCSS, project.isPresetStyleActive]);
   
   return (
     <div className="flex flex-col h-full bg-[#F5F5F7] relative">
