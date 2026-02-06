@@ -1,82 +1,105 @@
 import React, { useState } from 'react';
-import { Settings2, Library, Loader2, BookUp, FileType } from 'lucide-react';
+import { Settings2, Library, BookUp, FileType, UploadCloud } from 'lucide-react';
 import { Chapter, ProjectData, ImageAsset, ExtraFile, Metadata } from '../../types';
 import { parseTxtToChapters, parseEpub } from '../../services/epubService';
 
 interface FilesViewProps {
   onProjectUpdate: (updates: Partial<ProjectData>) => void;
   onChaptersLoaded: (chapters: Chapter[], firstChapterId: string) => void;
+  onLoadingStart: (msg: string) => void;
+  onLoadingEnd: () => void;
 }
 
-const FilesView: React.FC<FilesViewProps> = ({ onProjectUpdate, onChaptersLoaded }) => {
-  const [splitRegex, setSplitRegex] = useState<string>("^\\s*(Chapter\\s+\\d+|第[0-9一二三四五六七八九十百千]+[章回节]|序章|尾声|引子)");
-  const [showSplitSettings, setShowSplitSettings] = useState(false);
-  const [isBatchProcessing, setIsBatchProcessing] = useState(false);
-  const [batchProgress, setBatchProgress] = useState({ current: 0, total: 0 });
+type DragZoneType = 'txt' | 'epub' | 'batch' | null;
 
-  const handleTxtUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      const reader = new FileReader();
-      reader.onload = (event) => {
-        const text = event.target?.result as string;
-        const parsedChapters = parseTxtToChapters(text, splitRegex);
-        const newChapters: Chapter[] = parsedChapters.map((c, i) => ({
-          id: Date.now().toString() + i,
-          title: c.title,
-          content: c.content,
-          level: c.level,
-          subItems: []
-        }));
-        
-        onProjectUpdate({
-          metadata: { 
-            title: file.name.replace(/\.txt$/i, ''),
-            creator: '未知作者',
-            language: 'zh',
-            description: '',
-            publisher: '',
-            date: new Date().toISOString().split('T')[0],
-            series: '',
-            subjects: []
-          },
-          chapters: newChapters,
-          images: [],
-          cover: null,
-          customCSS: ''
-        });
-        
-        if (newChapters.length > 0) {
-            onChaptersLoaded(newChapters, newChapters[0].id);
-        }
-      };
-      reader.readAsText(file);
+const FilesView: React.FC<FilesViewProps> = ({ onProjectUpdate, onChaptersLoaded, onLoadingStart, onLoadingEnd }) => {
+  const [splitRegex, setSplitRegex] = useState<string>("^\\s*(Chapter\\s+\\d+|第[0-9一二三四五六七八九十百千]+[章回节]|序章|尾声|引子|[（(][0-9一二三四五六七八九十百千]+[)）])");
+  const [showSplitSettings, setShowSplitSettings] = useState(false);
+  const [dragActive, setDragActive] = useState<DragZoneType>(null);
+
+  // --- Processing Logic (Extracted for reuse) ---
+
+  const processTxtFile = (file: File) => {
+    if (!file.name.toLowerCase().endsWith('.txt')) {
+        alert('请上传 .txt 格式的文件');
+        return;
     }
+    onLoadingStart('正在解析 TXT 文件...');
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      try {
+          const text = event.target?.result as string;
+          const parsedChapters = parseTxtToChapters(text, splitRegex);
+          const newChapters: Chapter[] = parsedChapters.map((c, i) => ({
+            id: Date.now().toString() + i,
+            title: c.title,
+            content: c.content,
+            level: c.level,
+            subItems: []
+          }));
+          
+          onProjectUpdate({
+            metadata: { 
+              title: file.name.replace(/\.txt$/i, ''),
+              creator: '未知作者',
+              language: 'zh',
+              description: '',
+              publisher: '',
+              date: new Date().toISOString().split('T')[0],
+              series: '',
+              subjects: []
+            },
+            chapters: newChapters,
+            images: [],
+            cover: null,
+            customCSS: ''
+          });
+          
+          if (newChapters.length > 0) {
+              onChaptersLoaded(newChapters, newChapters[0].id);
+          }
+      } catch (error) {
+          console.error(error);
+          alert('TXT 解析失败');
+      } finally {
+          onLoadingEnd();
+      }
+    };
+    reader.onerror = () => onLoadingEnd();
+    reader.readAsText(file);
   };
 
-  const handleEpubUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-      const file = e.target.files?.[0];
-      if (file) {
-          try {
-              const importedProject = await parseEpub(file);
-              onProjectUpdate(importedProject);
-              
-              if (importedProject.chapters && importedProject.chapters.length > 0) {
-                  onChaptersLoaded(importedProject.chapters, importedProject.chapters[0].id);
-              }
-          } catch (error) {
-              console.error("Failed to parse EPUB:", error);
-              alert(`EPUB 解析失败: ${error instanceof Error ? error.message : String(error)}`);
+  const processEpubFile = async (file: File) => {
+      if (!file.name.toLowerCase().endsWith('.epub')) {
+          alert('请上传 .epub 格式的文件');
+          return;
+      }
+      onLoadingStart('正在解析 EPUB 文件...');
+      // Delay slightly to ensure UI renders the loading state
+      await new Promise(resolve => setTimeout(resolve, 50));
+      try {
+          const importedProject = await parseEpub(file);
+          onProjectUpdate(importedProject);
+          
+          if (importedProject.chapters && importedProject.chapters.length > 0) {
+              onChaptersLoaded(importedProject.chapters, importedProject.chapters[0].id);
           }
+      } catch (error) {
+          console.error("Failed to parse EPUB:", error);
+          alert(`EPUB 解析失败: ${error instanceof Error ? error.message : String(error)}`);
+      } finally {
+          onLoadingEnd();
       }
   };
 
-  const handleBatchEpubUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-      const files = e.target.files;
-      if (!files || files.length === 0) return;
+  const processBatchFiles = async (files: FileList | File[]) => {
+      const epubFiles = Array.from(files).filter(f => f.name.toLowerCase().endsWith('.epub'));
+      if (epubFiles.length === 0) {
+          alert('请选择至少一个 .epub 文件');
+          return;
+      }
 
-      setIsBatchProcessing(true);
-      setBatchProgress({ current: 0, total: files.length });
+      onLoadingStart(`准备合并 ${epubFiles.length} 本书籍...`);
 
       try {
           let mergedChapters: Chapter[] = [];
@@ -86,10 +109,13 @@ const FilesView: React.FC<FilesViewProps> = ({ onProjectUpdate, onChaptersLoaded
           let firstMetadata: Metadata | null = null;
           let firstCover: string | null = null;
 
-          const fileList = (Array.from(files) as File[]).sort((a, b) => a.name.localeCompare(b.name, 'zh'));
+          const fileList = epubFiles.sort((a, b) => a.name.localeCompare(b.name, 'zh'));
 
           for (let i = 0; i < fileList.length; i++) {
-              setBatchProgress({ current: i + 1, total: fileList.length });
+              onLoadingStart(`正在合并第 ${i + 1}/${fileList.length} 本书: ${fileList[i].name}`);
+              // Yield to UI thread
+              await new Promise(resolve => setTimeout(resolve, 10));
+              
               const file = fileList[i];
               const result = await parseEpub(file);
 
@@ -127,60 +153,150 @@ const FilesView: React.FC<FilesViewProps> = ({ onProjectUpdate, onChaptersLoaded
           console.error("Batch merge failed:", error);
           alert(`批量合并失败: ${error instanceof Error ? error.message : String(error)}`);
       } finally {
-          setIsBatchProcessing(false);
+          onLoadingEnd();
       }
+  };
+
+  // --- Input Change Handlers ---
+
+  const handleTxtUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) processTxtFile(file);
+  };
+
+  const handleEpubUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+      const file = e.target.files?.[0];
+      if (file) processEpubFile(file);
+  };
+
+  const handleBatchEpubUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+      const files = e.target.files;
+      if (files) processBatchFiles(files);
+  };
+
+  // --- Drag & Drop Handlers ---
+
+  const handleDragEnter = (e: React.DragEvent, zone: DragZoneType) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setDragActive(zone);
+  };
+
+  const handleDragLeave = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    // Only clear if we are leaving the current target container, not entering a child
+    if (e.currentTarget.contains(e.relatedTarget as Node)) return;
+    setDragActive(null);
+  };
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+  };
+
+  const handleDrop = (e: React.DragEvent, zone: DragZoneType) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setDragActive(null);
+    
+    const files = e.dataTransfer.files;
+    if (files && files.length > 0) {
+        if (zone === 'txt') {
+            processTxtFile(files[0]);
+        } else if (zone === 'epub') {
+            processEpubFile(files[0]);
+        } else if (zone === 'batch') {
+            processBatchFiles(files);
+        }
+    }
   };
 
   return (
     <div className="p-10 flex flex-col items-center justify-center h-full bg-[#F5F5F7]">
       <div className="bg-white/80 backdrop-blur-md p-10 rounded-[2.5rem] shadow-2xl border border-white/50 max-w-4xl w-full text-center transition-all">
         <div className="w-20 h-20 bg-blue-500/10 rounded-full flex items-center justify-center mx-auto mb-6 text-blue-600">
-            {isBatchProcessing ? <Loader2 size={40} className="animate-spin text-indigo-500" /> : <BookUp size={40} />}
+            <BookUp size={40} />
         </div>
         
         <h2 className="text-3xl font-bold mb-3 text-gray-900 tracking-tight">
-            {isBatchProcessing ? `正在处理书籍 (${batchProgress.current}/${batchProgress.total})` : '开始创作'}
+            开始创作
         </h2>
         <p className="text-gray-500 mb-10 font-medium">
-            {isBatchProcessing ? '请稍候，我们正在为您整合所有资源...' : '选择一个入口开始您的电子书制作之旅。'}
+            选择一个入口或拖入文件开始您的电子书制作之旅。
         </p>
-
-        {isBatchProcessing && (
-            <div className="w-full bg-gray-100 rounded-full h-2.5 mb-10 overflow-hidden shadow-inner">
-                <div 
-                    className="bg-gradient-to-r from-blue-500 to-indigo-600 h-full transition-all duration-300" 
-                    style={{ width: `${(batchProgress.current / batchProgress.total) * 100}%` }}
-                ></div>
-            </div>
-        )}
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-10">
             {/* TXT Import */}
-            <label className="block w-full cursor-pointer group">
-              <input type="file" accept=".txt" onChange={handleTxtUpload} className="hidden" disabled={isBatchProcessing} />
-              <div className="w-full min-h-[160px] bg-gray-900 text-white p-6 rounded-3xl transition-all active:scale-95 shadow-xl flex flex-col items-center justify-center hover:bg-black disabled:bg-gray-400 group-hover:-translate-y-1">
-                  <FileType size={32} className="mb-4 text-gray-400 group-hover:text-white transition-colors" />
-                  <span className="font-bold text-lg mb-1">导入 TXT</span>
+            <label 
+                className={`relative block w-full cursor-pointer group rounded-3xl transition-all duration-300 ${
+                   dragActive === 'txt' ? 'ring-4 ring-gray-400 scale-105 shadow-2xl' : 'active:scale-95'
+                }`}
+                onDragEnter={(e) => handleDragEnter(e, 'txt')}
+                onDragLeave={handleDragLeave}
+                onDragOver={handleDragOver}
+                onDrop={(e) => handleDrop(e, 'txt')}
+            >
+              <input type="file" accept=".txt" onChange={handleTxtUpload} className="hidden" />
+              <div className={`w-full min-h-[180px] p-6 rounded-3xl shadow-xl flex flex-col items-center justify-center transition-colors border-2 border-transparent ${
+                  dragActive === 'txt' ? 'bg-gray-800 border-gray-500' : 'bg-gray-900 hover:bg-black'
+              } text-white`}>
+                  {dragActive === 'txt' ? (
+                      <UploadCloud size={32} className="mb-4 text-white animate-bounce" />
+                  ) : (
+                      <FileType size={32} className="mb-4 text-gray-400 group-hover:text-white transition-colors" />
+                  )}
+                  <span className="font-bold text-lg mb-1">{dragActive === 'txt' ? '释放以导入 TXT' : '导入 TXT'}</span>
                   <span className="text-[10px] opacity-60">自动切分章节</span>
               </div>
             </label>
             
             {/* Single EPUB Import */}
-            <label className="block w-full cursor-pointer group">
-              <input type="file" accept=".epub" onChange={handleEpubUpload} className="hidden" disabled={isBatchProcessing} />
-              <div className="w-full min-h-[160px] bg-blue-600 text-white p-6 rounded-3xl transition-all active:scale-95 shadow-xl flex flex-col items-center justify-center hover:bg-blue-700 disabled:bg-blue-300 group-hover:-translate-y-1">
-                  <BookUp size={32} className="mb-4 text-blue-200 group-hover:text-white transition-colors" />
-                  <span className="font-bold text-lg mb-1">导入 EPUB</span>
+            <label 
+                className={`relative block w-full cursor-pointer group rounded-3xl transition-all duration-300 ${
+                   dragActive === 'epub' ? 'ring-4 ring-blue-300 scale-105 shadow-2xl' : 'active:scale-95'
+                }`}
+                onDragEnter={(e) => handleDragEnter(e, 'epub')}
+                onDragLeave={handleDragLeave}
+                onDragOver={handleDragOver}
+                onDrop={(e) => handleDrop(e, 'epub')}
+            >
+              <input type="file" accept=".epub" onChange={handleEpubUpload} className="hidden" />
+              <div className={`w-full min-h-[180px] p-6 rounded-3xl shadow-xl flex flex-col items-center justify-center transition-colors border-2 border-transparent ${
+                  dragActive === 'epub' ? 'bg-blue-500 border-white/30' : 'bg-blue-600 hover:bg-blue-700'
+              } text-white`}>
+                  {dragActive === 'epub' ? (
+                      <UploadCloud size={32} className="mb-4 text-white animate-bounce" />
+                  ) : (
+                      <BookUp size={32} className="mb-4 text-blue-200 group-hover:text-white transition-colors" />
+                  )}
+                  <span className="font-bold text-lg mb-1">{dragActive === 'epub' ? '释放以解析 EPUB' : '导入 EPUB'}</span>
                   <span className="text-[10px] opacity-60">解析现有电子书</span>
               </div>
             </label>
 
             {/* Batch EPUB Merge */}
-            <label className="block w-full cursor-pointer group">
-                <input type="file" accept=".epub" multiple onChange={handleBatchEpubUpload} className="hidden" disabled={isBatchProcessing} />
-                <div className="w-full min-h-[160px] bg-gradient-to-br from-indigo-600 to-purple-600 text-white p-6 rounded-3xl transition-all active:scale-95 shadow-2xl flex flex-col items-center justify-center hover:shadow-indigo-500/30 disabled:opacity-50 border border-white/10 group-hover:-translate-y-1">
-                    <Library size={32} className="mb-4 text-indigo-200 group-hover:text-white transition-colors" />
-                    <span className="font-bold text-lg mb-1">批量合并</span>
+            <label 
+                className={`relative block w-full cursor-pointer group rounded-3xl transition-all duration-300 ${
+                   dragActive === 'batch' ? 'ring-4 ring-indigo-300 scale-105 shadow-2xl' : 'active:scale-95'
+                }`}
+                onDragEnter={(e) => handleDragEnter(e, 'batch')}
+                onDragLeave={handleDragLeave}
+                onDragOver={handleDragOver}
+                onDrop={(e) => handleDrop(e, 'batch')}
+            >
+                <input type="file" accept=".epub" multiple onChange={handleBatchEpubUpload} className="hidden" />
+                <div className={`w-full min-h-[180px] p-6 rounded-3xl shadow-xl flex flex-col items-center justify-center transition-all border border-white/10 ${
+                    dragActive === 'batch' 
+                    ? 'bg-gradient-to-br from-indigo-500 to-purple-500 border-white/30' 
+                    : 'bg-gradient-to-br from-indigo-600 to-purple-600 hover:shadow-indigo-500/30 shadow-2xl'
+                } text-white`}>
+                    {dragActive === 'batch' ? (
+                      <UploadCloud size={32} className="mb-4 text-white animate-bounce" />
+                    ) : (
+                      <Library size={32} className="mb-4 text-indigo-200 group-hover:text-white transition-colors" />
+                    )}
+                    <span className="font-bold text-lg mb-1">{dragActive === 'batch' ? '释放以批量合并' : '批量合并'}</span>
                     <span className="text-[10px] opacity-60">多卷合一模式</span>
                 </div>
             </label>
@@ -200,9 +316,9 @@ const FilesView: React.FC<FilesViewProps> = ({ onProjectUpdate, onChaptersLoaded
                       value={splitRegex} 
                       onChange={(e) => setSplitRegex(e.target.value)} 
                     />
-                    <button onClick={() => setSplitRegex("^\\s*(Chapter\\s+\\d+|第[0-9一二三四五六七八九十百千]+[章回节]|序章|尾声|引子)")} className="px-3 py-2 text-[10px] bg-gray-200 hover:bg-gray-300 text-gray-600 rounded-xl transition-colors font-bold">恢复默认</button>
+                    <button onClick={() => setSplitRegex("^\\s*(Chapter\\s+\\d+|第[0-9一二三四五六七八九十百千]+[章回节]|序章|尾声|引子|[（(][0-9一二三四五六七八九十百千]+[)）])")} className="px-3 py-2 text-[10px] bg-gray-200 hover:bg-gray-300 text-gray-600 rounded-xl transition-colors font-bold whitespace-nowrap">恢复默认</button>
                 </div>
-                <p className="text-[10px] text-gray-400 mt-3 leading-relaxed">系统将使用此规则扫描 TXT 文件并创建新章节。支持大多数主流中文及英文小说格式。</p>
+                <p className="text-[10px] text-gray-400 mt-3 leading-relaxed">系统将使用此规则扫描 TXT 文件并创建新章节。支持大多数主流中文及英文小说格式，例如“第一章”、“Chapter 1”、“（一）”等。</p>
              </div>
            )}
         </div>

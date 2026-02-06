@@ -30,6 +30,8 @@ export interface ImageAsset {
   name: string;
   data: string; // Base64 data url
   type: string; // mime type
+  dimensions: string; // e.g., "1280x720"
+  size: number; // in bytes
 }
 
 export interface BookStyle {
@@ -121,6 +123,15 @@ img {
   padding: 4px;
   background: #f9f9f9;
 }
+.caption {
+  font-size: 0.9em;
+  color: #666;
+  text-align: center;
+  margin-top: -1.5em;
+  margin-bottom: 1.5em;
+  font-family: sans-serif;
+  text-indent: 0;
+}
 blockquote {
   margin: 1.5em 2em;
   padding-left: 1em;
@@ -192,6 +203,14 @@ img {
   border: 6px solid #dcd0c0;
   box-shadow: 3px 3px 10px rgba(62, 39, 35, 0.15);
   border-radius: 2px;
+}
+.caption {
+  font-size: 0.9em;
+  color: #8d6e63;
+  text-align: center;
+  margin-top: -2em;
+  margin-bottom: 2.5em;
+  text-indent: 0;
 }
 blockquote {
   margin: 1.5em 1em;
@@ -266,6 +285,16 @@ img {
   display: block;
   margin: 2.5em auto;
 }
+.caption {
+  font-size: 0.85em;
+  color: #999;
+  text-align: center;
+  margin-top: -2em;
+  margin-bottom: 2em;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  text-indent: 0;
+}
 blockquote {
   margin: 1.5em 0;
   padding-left: 1.5em;
@@ -318,7 +347,7 @@ h1 {
 }
 h2 { 
   color: #3498db; 
-  margin-top: 1.5em;
+  margin-top: 1.5em; 
   border-left: 4px solid #3498db;
   padding-left: 0.5em;
 }
@@ -335,6 +364,14 @@ img {
   border-radius: 12px;
   box-shadow: 0 8px 25px rgba(44, 62, 80, 0.1);
   border: 1px solid #e0e0e0;
+}
+.caption {
+  font-size: 0.9em;
+  color: #7f8c8d;
+  text-align: center;
+  margin-top: -1.5em;
+  margin-bottom: 2em;
+  text-indent: 0;
 }
 blockquote {
   margin: 1.5em 0;
@@ -372,103 +409,127 @@ body.cover-page { margin: 0; padding: 0; height: 100vh; overflow: hidden; backgr
 `
   },
   {
-    id: 'night',
-    name: '夜间',
+    id: 'dreamy',
+    name: '梦幻',
     css: `
 body { 
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; 
-  color: #e0e0e0; 
-  background: #121212; 
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; 
+  color: #5e4b56; 
+  background-image: linear-gradient(to bottom, #fff0f6 0%, #fff 100%);
   line-height: 1.8;
-  text-align: justify;
-  padding: 0 1em;
+  padding: 0 1.5em;
 } 
 h1 { 
   text-align: center; 
-  margin-top: 2em; 
-  margin-bottom: 1.5em;
-  font-weight: bold;
-  color: #ffffff;
-  page-break-before: always;
+  margin-top: 1.5em; 
+  margin-bottom: 1em;
+  font-weight: 700;
+  color: #ec4899; /* Pink-500 */
+  text-shadow: 2px 2px 0px #fce7f3;
+  letter-spacing: 1px;
 } 
 h2 { 
   margin-top: 1.5em; 
   margin-bottom: 1em;
-  font-weight: bold;
-  border-bottom: 1px solid #333;
+  font-weight: 600;
+  color: #3b82f6; /* Blue-500 */
+  border-bottom: 2px dashed #93c5fd;
   padding-bottom: 0.3em;
-  color: #f5f5f5;
+  display: inline-block;
 }
 p {
   text-indent: 2em;
-  margin-bottom: 0.8em;
+  margin-bottom: 1em;
 }
 img {
   max-width: 90%;
   height: auto;
   display: block;
   margin: 2em auto;
-  border: 1px solid #444;
-  padding: 4px;
-  background: #222;
-  filter: brightness(0.9);
+  border-radius: 16px;
+  border: 4px solid #fff;
+  box-shadow: 0 4px 15px rgba(236, 72, 153, 0.15);
+}
+.caption {
+  font-size: 0.9em;
+  color: #db2777;
+  text-align: center;
+  margin-top: -1.5em;
+  margin-bottom: 2em;
+  text-indent: 0;
+  opacity: 0.9;
 }
 blockquote {
-  margin: 1.5em 2em;
-  padding-left: 1em;
-  border-left: 3px solid #555;
-  color: #aaa;
+  margin: 1.5em 1em;
+  padding: 1em 1.5em;
+  border-left: none;
+  border-radius: 12px;
+  background-color: #f0f9ff; /* Light Blue */
+  border: 1px solid #bae6fd;
+  color: #0369a1;
+  font-style: italic;
+  position: relative;
+}
+blockquote::before {
+  content: "❝";
+  font-size: 2em;
+  color: #bae6fd;
+  position: absolute;
+  top: -10px;
+  left: 10px;
 }
 hr {
   border: 0;
   height: 1px;
-  background: #444;
-  margin: 2em auto;
+  background-image: linear-gradient(to right, transparent, #ec4899, transparent);
+  margin: 2.5em auto;
+  opacity: 0.5;
 }
 /* TOC Specific Styles */
-.toc-list { list-style-type: none; padding: 0; margin: 1em 2em; }
-.toc-item { margin-bottom: 0.5em; border-bottom: 1px solid #333; padding-bottom: 0.5em; }
-.toc-link { text-decoration: none; color: #e0e0e0; display: block; transition: color 0.2s; }
-.toc-link:hover { color: #fff; }
-.toc-level-2 { padding-left: 2em; font-size: 0.9em; color: #aaa; }
+.toc-list { list-style-type: none; padding: 0; margin: 1em 0; }
+.toc-item { margin-bottom: 0.5em; }
+.toc-link { text-decoration: none; color: #db2777; display: block; padding: 0.5em 1em; border-radius: 8px; transition: background 0.2s; }
+.toc-link:hover { background: #fce7f3; color: #be185d; }
+.toc-level-2 { padding-left: 2em; font-size: 0.9em; color: #64748b; }
+.toc-level-2 .toc-link { color: #475569; }
 
 /* Cover Page Styles */
-body.cover-page { margin: 0; padding: 0; height: 100vh; overflow: hidden; background-color: #121212; }
+body.cover-page { margin: 0; padding: 0; height: 100vh; overflow: hidden; background-color: #fff0f6; }
 .cover-container { width: 100%; height: 100%; display: flex; justify-content: center; align-items: center; }
 .cover-image { max-width: 100%; max-height: 100%; object-fit: contain; margin: 0; border: none; padding: 0; background: none; box-shadow: none; }
 `
   },
   {
-    id: 'tech',
-    name: '科技',
+    id: 'pudding',
+    name: '布丁',
     css: `
 body { 
-  font-family: "Menlo", "Consolas", "Monaco", monospace; 
-  color: #00ffc3; 
-  background-color: #0d1117;
-  line-height: 1.7; 
+  font-family: "Varela Round", "Nunito", "Yu Yuan", "YouYuan", "Microsoft YaHei", sans-serif;
+  color: #78350f; /* Amber-900 */
+  background-color: #fffbeb; /* Amber-50 */
+  line-height: 1.9; 
   padding: 0 1.5em;
 } 
 h1 { 
-  font-family: "Orbitron", sans-serif; /* A bit niche, might fallback */
-  font-size: 2.2em; 
-  text-align: left;
-  border-bottom: 1px solid #30363d; 
-  padding-bottom: 0.5em; 
-  margin-top: 1.5em;
-  margin-bottom: 1em;
-  color: #58a6ff;
-  font-weight: 700;
-  text-shadow: 0 0 5px rgba(88, 166, 255, 0.5);
+  font-size: 2em; 
+  text-align: center;
+  background: #fff;
+  border: 3px solid #fcd34d; /* Amber-300 */
+  border-radius: 30px;
+  padding: 0.5em 1em;
+  margin: 1.5em auto;
+  color: #92400e; /* Amber-800 */
+  font-weight: bold;
+  box-shadow: 4px 4px 0px #fcd34d;
+  width: fit-content;
 }
 h2 {
-  font-family: "Orbitron", sans-serif;
-  font-size: 1.5em;
-  color: #1f6feb;
+  font-size: 1.4em;
+  color: #b45309; /* Amber-700 */
   margin-top: 1.5em;
-  border-left: 3px solid #58a6ff;
   padding-left: 0.5em;
-  font-weight: 500;
+  border-left: 6px solid #f59e0b;
+  border-radius: 4px;
 }
 p {
   text-indent: 2em;
@@ -479,33 +540,45 @@ img {
   height: auto;
   display: block;
   margin: 2.5em auto;
-  border: 1px solid #30363d;
-  filter: grayscale(50%) contrast(1.2);
+  border-radius: 24px;
+  border: 6px solid #fff;
+  box-shadow: 0 4px 12px rgba(180, 83, 9, 0.1);
+}
+.caption {
+  font-size: 0.9em;
+  color: #92400e;
+  text-align: center;
+  margin-top: -2em;
+  margin-bottom: 2em;
+  text-indent: 0;
+  opacity: 0.8;
 }
 blockquote {
   margin: 1.5em 1em;
-  padding: 1em;
-  border: 1px solid #30363d;
-  background-color: rgba(88, 166, 255, 0.05);
-  border-radius: 4px;
-  color: #8b949e;
+  padding: 1.2em;
+  background-color: #fff;
+  border-radius: 20px;
+  color: #92400e;
+  border: 2px dashed #fcd34d;
 }
 hr {
   border: 0;
-  height: 1px;
-  background-image: linear-gradient(to right, transparent, #58a6ff, transparent);
+  height: 2px;
+  background-color: #fcd34d;
   margin: 2.5em auto;
+  width: 50%;
+  border-radius: 2px;
 }
 /* TOC Specific Styles */
 .toc-list { list-style-type: none; padding: 0; margin: 2em 0; }
-.toc-item { margin-bottom: 0.5em; border-left: 2px solid #30363d; padding-left: 1em; transition: border-color 0.2s; }
-.toc-item:hover { border-left-color: #58a6ff; }
-.toc-link { text-decoration: none; color: #58a6ff; display: block; font-family: "Orbitron", sans-serif; }
-.toc-link:hover { text-shadow: 0 0 8px rgba(88, 166, 255, 0.6); color: #fff; }
-.toc-level-2 { margin-left: 1.5em; font-size: 0.9em; border-left-color: #1f6feb; }
+.toc-item { margin-bottom: 0.8em; }
+.toc-link { text-decoration: none; color: #92400e; font-weight: bold; display: block; padding: 0.8em; background: #fff; border-radius: 16px; border: 2px solid #fef3c7; transition: all 0.2s; }
+.toc-link:hover { transform: scale(1.02); border-color: #fcd34d; background: #fffbeb; }
+.toc-level-2 { margin-left: 1.5em; font-size: 0.9em; }
+.toc-level-2 .toc-link { background: rgba(255,255,255,0.5); border: none; }
 
 /* Cover Page Styles */
-body.cover-page { margin: 0; padding: 0; height: 100vh; overflow: hidden; background-color: #0d1117; }
+body.cover-page { margin: 0; padding: 0; height: 100vh; overflow: hidden; background-color: #fffbeb; }
 .cover-container { width: 100%; height: 100%; display: flex; justify-content: center; align-items: center; }
 .cover-image { max-width: 100%; max-height: 100%; object-fit: contain; margin: 0; border: none; padding: 0; background: none; box-shadow: none; }
 `

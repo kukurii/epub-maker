@@ -1,7 +1,6 @@
-
 import React, { useState } from 'react';
 import { Chapter } from '../types';
-import { ChevronUp, ChevronDown, Trash2, Plus, Search, ChevronRight, Hash, ArrowDownToLine, Scissors, Settings, X, Save } from 'lucide-react';
+import { ChevronUp, ChevronDown, Trash2, Plus, Search, ArrowDownToLine, Settings, X, Save, Hash } from 'lucide-react';
 
 interface DirectoryProps {
   chapters: Chapter[];
@@ -121,7 +120,7 @@ const Directory: React.FC<DirectoryProps> = ({
   );
 
   return (
-    <div className="h-full flex flex-col bg-white/70 backdrop-blur-xl border-r border-gray-200/50 relative">
+    <div className="h-full flex flex-col bg-white/70 backdrop-blur-xl border-r border-gray-200/50 relative w-80 flex-shrink-0">
       {/* Header */}
       <div className="pt-6 pb-2 px-4 sticky top-0 z-10 bg-white/80 backdrop-blur-lg border-b border-gray-200/50">
         <div className="flex justify-between items-center mb-3">
@@ -160,12 +159,12 @@ const Directory: React.FC<DirectoryProps> = ({
                   : 'hover:bg-gray-100/80 text-gray-800'
               }`}
             >
-              <div className="flex-1 font-semibold text-sm truncate pr-2">
+              <div className="flex-1 min-w-0 font-semibold text-sm truncate pr-2" title={chapterItem.title}>
                 {chapterItem.title || '无标题章节'}
               </div>
 
               {/* Action Buttons */}
-              <div className={`flex items-center space-x-0.5 ${currentChapterId === chapterItem.id ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'} transition-opacity`}>
+              <div className={`flex-shrink-0 flex items-center space-x-0.5 ${currentChapterId === chapterItem.id ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'} transition-opacity`}>
                   
                   {chapterItem.originalIndex < chapters.length - 1 && (
                       <button 
@@ -236,7 +235,7 @@ const Directory: React.FC<DirectoryProps> = ({
                     {item.level === 1 && <div className="absolute left-[23px] top-1/2 -translate-y-1/2 w-2 h-px bg-gray-300"></div>}
                     {item.level === 2 && <div className="absolute left-[26px] top-1/2 -translate-y-1/2 w-2 h-px bg-gray-300"></div>}
                     <Hash size={10} className="mr-2 opacity-50 flex-shrink-0" />
-                    <span className="truncate">{item.text || '小节'}</span>
+                    <span className="truncate flex-1 min-w-0" title={item.text}>{item.text || '小节'}</span>
                   </div>
                ))}
             </div>

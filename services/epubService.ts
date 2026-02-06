@@ -1,5 +1,3 @@
-
-
 import JSZip from 'jszip';
 import saveAs from 'file-saver';
 import { ProjectData, PRESET_STYLES, Chapter, Metadata, ImageAsset, ExtraFile } from '../types';
@@ -332,7 +330,7 @@ export const parseTxtToChapters = (text: string, customRegex?: string): { title:
   let currentTitle = 'Start';
   let currentContent: string[] = [];
 
-  let chapterRegexStr = "^\\s*(Chapter\\s+\\d+|第[0-9一二三四五六七八九十百千]+[章回节]|序章|尾声|引子)";
+  let chapterRegexStr = "^\\s*(Chapter\\s+\\d+|第[0-9一二三四五六七八九十百千]+[章回节]|序章|尾声|引子|[（(][0-9一二三四五六七八九十百千]+[)）])";
   
   if (customRegex && customRegex.trim().length > 0) {
       chapterRegexStr = customRegex;
@@ -343,7 +341,7 @@ export const parseTxtToChapters = (text: string, customRegex?: string): { title:
       chapterRegex = new RegExp(chapterRegexStr, 'i');
   } catch (e) {
       console.error("Invalid Regex provided, falling back to default.", e);
-      chapterRegex = /^\s*(Chapter\\s+\\d+|第[0-9一二三四五六七八九十百千]+[章回节]|序章|尾声|引子)/i;
+      chapterRegex = /^\s*(Chapter\s+\d+|第[0-9一二三四五六七八九十百千]+[章回节]|序章|尾声|引子|[（(][0-9一二三四五六七八九十百千]+[)）])/i;
   }
 
   const flushChapter = () => {
@@ -446,11 +444,15 @@ export const parseEpub = async (file: File): Promise<Partial<ProjectData>> => {
                     const data = await imageFile.async('base64');
                     const dataUrl = `data:${mediaType};base64,${data}`;
                     const assetId = Date.now().toString(36) + Math.random().toString(36).substr(2, 6);
+                    const base64 = dataUrl.split(',')[1] || '';
+                    const size = Math.floor((base64.length * 3) / 4) - ((base64.match(/=/g) || []).length);
                     const asset: ImageAsset = {
                         id: assetId,
                         name: href.split('/').pop() || 'image',
                         data: dataUrl,
-                        type: mediaType
+                        type: mediaType,
+                        dimensions: 'N/A',
+                        size: size
                     };
                     newImages.push(asset);
                     imagePathMap.set(zipPath, asset);

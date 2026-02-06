@@ -179,37 +179,15 @@ const StylesView: React.FC<StylesViewProps> = ({ project, activeChapter, onUpdat
   // Snippet Info Modal State
   const [infoSnippet, setInfoSnippet] = useState<SnippetItem | null>(null);
 
-  // API Key State
-  const [showApiKeyModal, setShowApiKeyModal] = useState(false);
-  const [apiKey, setApiKey] = useState('');
-
-  useEffect(() => {
-      const storedKey = localStorage.getItem('gemini_api_key');
-      if (storedKey) setApiKey(storedKey);
-  }, []);
-
-  const handleSaveApiKey = () => {
-      localStorage.setItem('gemini_api_key', apiKey);
-      setShowApiKeyModal(false);
-  };
-
   const isPresetActive = project.isPresetStyleActive !== false;
 
   const handleAiGenerateCss = async () => {
     if (!aiPrompt || isAiGenerating) return;
     
-    // Prioritize user key, fallback to env key
-    const keyToUse = apiKey || process.env.API_KEY;
-
-    if (!keyToUse) {
-        alert("请先配置 Gemini API Key (点击魔法样式旁边的小齿轮)");
-        setShowApiKeyModal(true);
-        return;
-    }
-
+    // FIX: Removed custom API key handling to use process.env.API_KEY exclusively.
     setIsAiGenerating(true);
     try {
-        const ai = new GoogleGenAI({ apiKey: keyToUse });
+        const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
         
         const activeStyle = PRESET_STYLES.find(s => s.id === project.activeStyleId) || PRESET_STYLES[0];
         const baseCssForContext = isPresetActive ? activeStyle.css : '/* No base theme active. Generate from scratch. */ body { font-family: sans-serif; }';
@@ -321,46 +299,13 @@ const StylesView: React.FC<StylesViewProps> = ({ project, activeChapter, onUpdat
             </div>
 
             <div className="flex-1 flex flex-col min-h-[300px]">
+                {/* FIX: Removed custom API key management UI. */}
                 <div className="relative">
                     <h2 className="text-xl font-bold mb-4 text-gray-800 flex items-center justify-between">
                         <div className="flex items-center">
                             <Sparkles size={20} className="mr-2 text-yellow-500"/> AI 魔法样式
                         </div>
-                        <button 
-                            onClick={() => setShowApiKeyModal(!showApiKeyModal)} 
-                            className="p-1.5 text-gray-400 hover:text-blue-500 hover:bg-blue-50 rounded-full transition-colors"
-                            title="设置 API Key"
-                        >
-                            <Settings size={18} />
-                        </button>
                     </h2>
-
-                    {showApiKeyModal && (
-                        <div className="absolute top-10 right-0 z-20 w-72 bg-white rounded-xl shadow-2xl border border-gray-200 p-4 animate-in fade-in slide-in-from-top-2">
-                             <div className="flex justify-between items-center mb-3">
-                                <h3 className="text-sm font-bold text-gray-800 flex items-center"><Key size={14} className="mr-1.5 text-blue-500"/> 设置 Gemini API</h3>
-                                <button onClick={() => setShowApiKeyModal(false)} className="text-gray-400 hover:text-gray-600"><X size={14}/></button>
-                             </div>
-                             <p className="text-xs text-gray-500 mb-3 leading-relaxed">
-                                输入您的 API Key 以启用 AI 生成功能。Key 将仅存储在您的浏览器本地。
-                             </p>
-                             <input 
-                                type="password" 
-                                className="w-full bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-xs focus:ring-2 focus:ring-blue-500 focus:outline-none mb-3 font-mono"
-                                placeholder="sk-..."
-                                value={apiKey}
-                                onChange={(e) => setApiKey(e.target.value)}
-                             />
-                             <div className="flex justify-end">
-                                <button 
-                                    onClick={handleSaveApiKey} 
-                                    className="bg-blue-600 text-white text-xs font-bold py-1.5 px-4 rounded-lg hover:bg-blue-700 transition-colors shadow-sm shadow-blue-500/20"
-                                >
-                                    保存配置
-                                </button>
-                             </div>
-                        </div>
-                    )}
                 </div>
 
                 <div className="bg-gradient-to-br from-blue-50 to-indigo-50 p-4 rounded-xl border border-blue-100 space-y-3 mb-6">

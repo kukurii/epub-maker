@@ -4,23 +4,25 @@ import {
   Heading2, 
   Bold, 
   Italic, 
-  Scissors, 
-  Search, 
+  Quote, 
+  List, 
+  ListOrdered, 
   Image as ImageIcon,
   AlignLeft,
-  AlignCenter,
+  AlignJustify,
+  RotateCcw,
+  RotateCw,
+  Search,
   X,
   ChevronDown,
   ChevronUp, 
   Type,
-  RotateCcw,
-  RotateCw,
   Clock,
-  AlignJustify,
-  Quote,
-  List,
-  ListOrdered,
-  Minus
+  CheckCircle2,
+  Scissors,
+  Minus,
+  Captions,
+  PowerOff
 } from 'lucide-react';
 import { ProjectData, PRESET_STYLES, ImageAsset, TocItem } from '../types';
 
@@ -30,6 +32,9 @@ interface EditorProps {
   onSplitChapter: (beforeContent: string, afterContent: string) => void;
   project: ProjectData;
   scrollToId?: string | null;
+  saveStatus?: 'saved' | 'saving';
+  autoSaveEnabled: boolean;
+  onToggleAutoSave: () => void;
 }
 
 // --- Image Path Conversion Helpers ---
@@ -78,14 +83,28 @@ const editorHTMLToContent = (html: string, images: ImageAsset[]): string => {
 };
 
 
-const Editor: React.FC<EditorProps> = ({ content, onContentChange, onSplitChapter, project, scrollToId }) => {
+const Editor: React.FC<EditorProps> = ({ 
+    content, 
+    onContentChange, 
+    onSplitChapter, 
+    project, 
+    scrollToId, 
+    saveStatus = 'saved',
+    autoSaveEnabled,
+    onToggleAutoSave
+}) => {
   const editorRef = useRef<HTMLDivElement>(null);
   const [showFindBar, setShowFindBar] = useState(false);
   const [showImageModal, setShowImageModal] = useState(false);
   const [findText, setFindText] = useState('');
   const [replaceText, setReplaceText] = useState('');
-  const [matchCount, setMatchCount] = useState({ current: 0, total: 0 });
   const [stats, setStats] = useState({ chars: 0, time: 0 });
+
+  // --- Search State ---
+  const [matches, setMatches] = useState<Range[]>([]);
+  const [currentMatchIndex, setCurrentMatchIndex] = useState(-1);
+  const searchUpdateRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+
 
   // --- Scroll Logic ---
   useEffect(() => {
@@ -221,6 +240,23 @@ const Editor: React.FC<EditorProps> = ({ content, onContentChange, onSplitChapte
     }
   };
 
+  const toggleCaption = () => {
+    let currentBlock = getContainingBlock();
+    if (!currentBlock) return;
+
+    // If currently H1, H2, Blockquote, convert to P
+    if (['H1', 'H2', 'BLOCKQUOTE'].includes(currentBlock.tagName)) {
+        execCmd('formatBlock', 'P');
+        // We need to find the block again because the DOM node was replaced
+        currentBlock = getContainingBlock(); 
+    }
+
+    if (currentBlock) {
+        currentBlock.classList.toggle('caption');
+        processContentUpdates();
+    }
+  };
+
   const insertImage = (img: ImageAsset) => {
     const html = `<img src="${img.data}" data-id="${img.id}" data-filename="${img.name}" alt="${img.name}" />`;
     // Restore focus before inserting
@@ -267,86 +303,137 @@ const Editor: React.FC<EditorProps> = ({ content, onContentChange, onSplitChapte
     }
   };
   
-  // --- Search Logic (Custom TreeWalker) ---
-  const findMatches = (text: string) => {
-    if (!editorRef.current || !text) return [];
-    
-    const matches: Range[] = [];
-    const treeWalker = document.createTreeWalker(editorRef.current, NodeFilter.SHOW_TEXT);
-    
-    let currentNode = treeWalker.nextNode();
-    while (currentNode) {
-        const nodeValue = currentNode.nodeValue || '';
-        let startPos = 0;
-        let index = nodeValue.toLowerCase().indexOf(text.toLowerCase(), startPos);
-        
-        while (index !== -1) {
-            const range = document.createRange();
-            range.setStart(currentNode, index);
-            range.setEnd(currentNode, index + text.length);
-            matches.push(range);
-            
-            startPos = index + text.length;
-            index = nodeValue.toLowerCase().indexOf(text.toLowerCase(), startPos);
-        }
-        currentNode = treeWalker.nextNode();
+  // --- Robust Search & Highlight Logic ---
+
+  const clearHighlights = useCallback(() => {
+    if (!editorRef.current) return;
+    const marks = editorRef.current.querySelectorAll('mark.search-highlight');
+    marks.forEach(mark => {
+      const parent = mark.parentNode;
+      if (!parent) return;
+      while (mark.firstChild) {
+        parent.insertBefore(mark.firstChild, mark);
+      }
+      parent.removeChild(mark);
+      parent.normalize(); // Merges adjacent text nodes
+    });
+  }, []);
+
+  const runSearch = useCallback((textToFind: string) => {
+    if (!editorRef.current || !textToFind) return [];
+
+    const textNodes: Text[] = [];
+    const walker = document.createTreeWalker(editorRef.current, NodeFilter.SHOW_TEXT);
+    while (walker.nextNode()) {
+      textNodes.push(walker.currentNode as Text);
     }
-    return matches;
-  };
+
+    const fullText = textNodes.map(n => n.nodeValue).join('');
+    const searchLower = textToFind.toLowerCase();
+    const fullTextLower = fullText.toLowerCase();
+
+    const ranges: Range[] = [];
+    let startIndex = 0;
+    while ((startIndex = fullTextLower.indexOf(searchLower, startIndex)) > -1) {
+      const endIndex = startIndex + textToFind.length;
+
+      let charCount = 0;
+      let startNode, startOffset, endNode, endOffset;
+
+      for (const node of textNodes) {
+        const nodeLen = node.nodeValue!.length;
+        const currentEnd = charCount + nodeLen;
+        
+        if (startNode === undefined && startIndex < currentEnd) {
+          startNode = node;
+          startOffset = startIndex - charCount;
+        }
+
+        if (endNode === undefined && endIndex <= currentEnd) {
+          endNode = node;
+          endOffset = endIndex - charCount;
+          break;
+        }
+        charCount += nodeLen;
+      }
+      
+      if (startNode && endNode) {
+        const range = document.createRange();
+        range.setStart(startNode, startOffset!);
+        range.setEnd(endNode, endOffset!);
+        ranges.push(range);
+      }
+      
+      startIndex += 1;
+    }
+    return ranges;
+  }, []);
+
+  useEffect(() => {
+    if (searchUpdateRef.current) {
+      clearTimeout(searchUpdateRef.current);
+    }
+    searchUpdateRef.current = setTimeout(() => {
+      clearHighlights();
+      if (findText) {
+        const foundRanges = runSearch(findText);
+        setMatches(foundRanges);
+        if (foundRanges.length > 0) {
+          // Highlight all matches by wrapping them in <mark> tags
+          // Iterate backwards to avoid invalidating ranges
+          for (let i = foundRanges.length - 1; i >= 0; i--) {
+            try {
+              const mark = document.createElement('mark');
+              mark.className = 'search-highlight';
+              foundRanges[i].surroundContents(mark);
+            } catch (e) {
+              console.warn("Could not highlight range", foundRanges[i], e);
+            }
+          }
+          setCurrentMatchIndex(0);
+        } else {
+          setCurrentMatchIndex(-1);
+        }
+      } else {
+        setMatches([]);
+        setCurrentMatchIndex(-1);
+      }
+    }, 300); // Debounce search
+  }, [findText, content, runSearch, clearHighlights]);
+
+  useEffect(() => {
+    if (!editorRef.current) return;
+    const allMarks = editorRef.current.querySelectorAll('.search-highlight');
+    allMarks.forEach((mark, index) => {
+      if (index === currentMatchIndex) {
+        if (!mark.classList.contains('search-highlight--current')) {
+           mark.classList.add('search-highlight--current');
+           mark.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+      } else {
+        mark.classList.remove('search-highlight--current');
+      }
+    });
+  }, [currentMatchIndex, matches]);
 
   const navigateMatch = (direction: 'next' | 'prev') => {
-      const matches = findMatches(findText);
-      if (matches.length === 0) {
-          setMatchCount({ current: 0, total: 0 });
-          return;
-      }
-
-      const selection = window.getSelection();
-      let nextIndex = 0;
-
-      if (selection && selection.rangeCount > 0) {
-          const r = selection.getRangeAt(0);
-          if (direction === 'next') {
-              nextIndex = matches.findIndex(m => m.compareBoundaryPoints(Range.START_TO_START, r) > 0);
-              if (nextIndex === -1) nextIndex = 0; // wrap
-          } else {
-              for (let i = matches.length - 1; i >= 0; i--) {
-                  if (matches[i].compareBoundaryPoints(Range.START_TO_START, r) < 0) {
-                      nextIndex = i;
-                      break;
-                  }
-              }
-              if (nextIndex === -1 && matches.length > 0) nextIndex = matches.length - 1;
-          }
-      }
-
-      const targetRange = matches[nextIndex];
-      selection?.removeAllRanges();
-      selection?.addRange(targetRange);
-      
-      const parent = targetRange.startContainer.parentElement;
-      parent?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-
-      setMatchCount({ current: nextIndex + 1, total: matches.length });
+    if (matches.length === 0) return;
+    const nextIndex = direction === 'next'
+      ? (currentMatchIndex + 1) % matches.length
+      : (currentMatchIndex - 1 + matches.length) % matches.length;
+    setCurrentMatchIndex(nextIndex);
   };
-
+  
   const handleReplace = () => {
-    const selection = window.getSelection();
-    if (!selection || selection.rangeCount === 0) return;
-    
-    const range = selection.getRangeAt(0);
-    if (range.toString().toLowerCase() === findText.toLowerCase()) {
-        range.deleteContents();
-        range.insertNode(document.createTextNode(replaceText));
-        processContentUpdates();
-        navigateMatch('next');
-    } else {
-        navigateMatch('next');
+    if (currentMatchIndex === -1 || !editorRef.current) return;
+    const currentMark = editorRef.current.querySelector('.search-highlight--current');
+    if (currentMark) {
+      currentMark.textContent = replaceText;
+      const text = findText;
+      setFindText(''); 
+      setTimeout(() => setFindText(text), 50); 
     }
   };
-
-  const activeStyle = PRESET_STYLES.find(s => s.id === project.activeStyleId) || PRESET_STYLES[0];
-  const activeStyleName = activeStyle.name || project.activeStyleId;
 
   // Gather extra CSS from extraFiles
   const extraCSS = project.extraFiles
@@ -380,134 +467,213 @@ const Editor: React.FC<EditorProps> = ({ content, onContentChange, onSplitChapte
         outline-offset: 2px;
         box-shadow: 0 4px 15px rgba(0,0,0,0.1);
     }
+    .editor-paper .search-highlight {
+      background-color: #fef08a; /* yellow-200 */
+      border-radius: 2px;
+      transition: background-color 0.3s;
+    }
+    .editor-paper .search-highlight--current {
+      background-color: #f97316; /* orange-600 */
+      color: white;
+    }
   `}, [project.activeStyleId, project.customCSS, extraCSS, project.isPresetStyleActive]);
   
+  // Extract chapter title for display
+  const chapterTitle = useMemo(() => {
+     if (!editorRef.current) return '';
+     const h1 = editorRef.current.querySelector('h1');
+     return h1?.innerText || '';
+  }, [content]); // Not perfect, but a rough sync
+
   return (
-    <div className="flex flex-col h-full bg-[#F5F5F7] relative">
+    <div className="flex flex-col h-full bg-[#F9FAFB] relative overflow-hidden">
       
-      {/* Top Toolbar */}
-      <div className="flex-none bg-white border-b border-gray-200 px-4 py-3 flex items-center justify-between z-20 shadow-sm overflow-x-auto">
-        <div className="flex items-center space-x-1 min-w-max">
-            <ToolbarButton icon={<RotateCcw size={18} />} onClick={() => execCmd('undo')} title="撤销" />
-            <ToolbarButton icon={<RotateCw size={18} />} onClick={() => execCmd('redo')} title="重做" />
-            <div className="w-px h-5 bg-gray-300 mx-2" />
-            <ToolbarButton icon={<Heading1 size={18} />} onClick={() => toggleBlock('H1')} title="标题 1 (章节名)" />
-            <ToolbarButton icon={<Heading2 size={18} />} onClick={() => toggleBlock('H2')} title="标题 2 (小节)" />
-            <div className="w-px h-5 bg-gray-300 mx-2" />
-            <ToolbarButton icon={<Bold size={18} />} onClick={() => execCmd('bold')} />
-            <ToolbarButton icon={<Italic size={18} />} onClick={() => execCmd('italic')} />
-            <div className="w-px h-5 bg-gray-300 mx-2" />
-            <ToolbarButton icon={<Quote size={18} />} onClick={toggleBlockquote} title="引用" />
-            <ToolbarButton icon={<List size={18} />} onClick={() => execCmd('insertUnorderedList')} title="无序列表" />
-            <ToolbarButton icon={<ListOrdered size={18} />} onClick={() => execCmd('insertOrderedList')} title="有序列表" />
-            <div className="w-px h-5 bg-gray-300 mx-2" />
-            <ToolbarButton icon={<AlignLeft size={18} />} onClick={() => execCmd('justifyLeft')} />
-            <ToolbarButton icon={<AlignCenter size={18} />} onClick={() => execCmd('justifyCenter')} />
-            <div className="w-px h-5 bg-gray-300 mx-2" />
-            <ToolbarButton icon={<ImageIcon size={18} />} onClick={() => setShowImageModal(true)} title="插入图片" />
+      {/* Redesigned Toolbar */}
+      <div className="flex-none h-14 bg-white border-b border-gray-200 px-6 flex items-center justify-between z-20 shadow-[0_2px_10px_rgba(0,0,0,0.02)]">
+        <div className="flex items-center">
+            {/* History */}
+            <div className="flex items-center space-x-1 mr-2">
+                <ToolbarButton icon={<RotateCcw size={16} />} onClick={() => execCmd('undo')} title="撤销" />
+                <ToolbarButton icon={<RotateCw size={16} />} onClick={() => execCmd('redo')} title="重做" />
+            </div>
+            
+            <div className="h-5 w-px bg-gray-200 mx-2" />
+
+            {/* Headings */}
+            <div className="flex items-center space-x-1 mx-2">
+                <ToolbarButton icon={<Heading1 size={16} />} onClick={() => toggleBlock('H1')} title="标题 1 (章节名)" />
+                <ToolbarButton icon={<Heading2 size={16} />} onClick={() => toggleBlock('H2')} title="标题 2 (小节)" />
+            </div>
+
+            <div className="h-5 w-px bg-gray-200 mx-2" />
+
+            {/* Formatting */}
+            <div className="flex items-center space-x-1 mx-2">
+                <ToolbarButton icon={<Bold size={16} />} onClick={() => execCmd('bold')} />
+                <ToolbarButton icon={<Italic size={16} />} onClick={() => execCmd('italic')} />
+                <ToolbarButton icon={<Quote size={16} />} onClick={toggleBlockquote} title="引用" />
+                <ToolbarButton icon={<Captions size={16} />} onClick={toggleCaption} title="图片说明 (图注)" />
+            </div>
+
+            <div className="h-5 w-px bg-gray-200 mx-2" />
+
+            {/* Lists */}
+            <div className="flex items-center space-x-1 mx-2">
+                <ToolbarButton icon={<List size={16} />} onClick={() => execCmd('insertUnorderedList')} title="无序列表" />
+                <ToolbarButton icon={<ListOrdered size={16} />} onClick={() => execCmd('insertOrderedList')} title="有序列表" />
+            </div>
+
+            <div className="h-5 w-px bg-gray-200 mx-2" />
+
+            {/* Alignment */}
+            <div className="flex items-center space-x-1 mx-2">
+                <ToolbarButton icon={<AlignLeft size={16} />} onClick={() => execCmd('justifyLeft')} />
+                <ToolbarButton icon={<AlignJustify size={16} />} onClick={() => execCmd('justifyCenter')} />
+            </div>
+
+            <div className="h-5 w-px bg-gray-200 mx-2" />
+
+            {/* Insert & Actions */}
+            <div className="flex items-center space-x-1 mx-2">
+                <ToolbarButton icon={<ImageIcon size={16} />} onClick={() => setShowImageModal(true)} title="插入图片" />
+                <ToolbarButton icon={<Minus size={16} />} onClick={() => execCmd('insertHorizontalRule')} title="插入分割线" />
+            </div>
+
+            <div className="h-5 w-px bg-gray-200 mx-2" />
+
+             {/* Tools */}
+            <div className="flex items-center space-x-1 mx-2">
+                <ToolbarButton icon={<Scissors size={16} />} onClick={handleSplit} title="手动切分章节" />
+            </div>
         </div>
 
-        <div className="flex items-center space-x-2 ml-4 min-w-max">
-            <button
-                onMouseDown={(e) => e.preventDefault()}
-                onClick={() => execCmd('insertHorizontalRule')}
-                className="flex items-center space-x-1 px-3 py-1.5 bg-gray-100 text-gray-700 hover:bg-gray-200 rounded-md text-sm font-medium transition-colors"
-                title="插入分割线"
-            >
-                <Minus size={16} />
-                <span>插入分割线</span>
-            </button>
-            <button 
-                onMouseDown={(e) => e.preventDefault()}
-                onClick={handleSplit}
-                className="flex items-center space-x-1 px-3 py-1.5 bg-indigo-50 text-indigo-600 hover:bg-indigo-100 rounded-md text-sm font-medium transition-colors"
-                title="在光标位置切分章节"
-            >
-                <Scissors size={16} />
-                <span>手动切分</span>
-            </button>
-            <div className="w-px h-5 bg-gray-300 mx-2" />
-            <ToolbarButton icon={<Search size={18} />} onClick={() => setShowFindBar(!showFindBar)} active={showFindBar} title="查找替换" />
+        <div className="flex items-center">
+             <button 
+                onClick={() => setShowFindBar(!showFindBar)} 
+                className={`p-2 rounded-lg transition-colors ${showFindBar ? 'bg-blue-50 text-blue-600' : 'text-gray-400 hover:text-gray-600 hover:bg-gray-100'}`}
+                title="查找与替换"
+             >
+                <Search size={18} />
+             </button>
         </div>
       </div>
 
       {/* Find & Replace Bar */}
       {showFindBar && (
-        <div className="flex-none bg-gray-50 border-b border-gray-200 px-4 py-2 flex flex-wrap gap-2 items-center animate-in slide-in-from-top-2 z-10">
-           <div className="flex items-center bg-white border border-gray-300 rounded-md px-2 py-1 shadow-sm focus-within:ring-2 focus-within:ring-blue-500 focus-within:border-transparent flex-1 min-w-[150px]">
+        <div className="flex-none bg-white border-b border-gray-200 px-6 py-2 flex flex-wrap gap-3 items-center animate-in slide-in-from-top-2 z-10 shadow-sm">
+           <div className="flex items-center bg-gray-100 rounded-lg px-3 py-1.5 flex-1 min-w-[200px]">
               <Search size={14} className="text-gray-400 mr-2 flex-shrink-0" />
               <input 
-                className="text-sm outline-none w-full min-w-0" 
-                placeholder="查找..." 
+                className="text-sm bg-transparent outline-none w-full min-w-0 placeholder:text-gray-400" 
+                placeholder="查找内容..." 
                 value={findText} 
                 onChange={e => setFindText(e.target.value)}
-                onKeyDown={e => e.key === 'Enter' && navigateMatch('next')}
+                onKeyDown={e => { if (e.key === 'Enter') navigateMatch('next')}}
               />
-              {matchCount.total > 0 && <span className="text-xs text-gray-400 ml-2 whitespace-nowrap">{matchCount.current}/{matchCount.total}</span>}
+              {findText && <span className="text-xs text-gray-400 ml-2 whitespace-nowrap tabular-nums">{matches.length > 0 ? `${currentMatchIndex + 1}/${matches.length}` : '0/0'}</span>}
            </div>
            
-           <div className="flex space-x-1 flex-shrink-0">
-               <button onClick={() => navigateMatch('prev')} className="p-1 hover:bg-gray-200 rounded"><ChevronUp size={16}/></button>
-               <button onClick={() => navigateMatch('next')} className="p-1 hover:bg-gray-200 rounded"><ChevronDown size={16}/></button>
+           <div className="flex space-x-1 flex-shrink-0 bg-gray-100 rounded-lg p-0.5">
+               <button onClick={() => navigateMatch('prev')} className="p-1 hover:bg-white hover:shadow-sm rounded transition-all text-gray-500"><ChevronUp size={16}/></button>
+               <button onClick={() => navigateMatch('next')} className="p-1 hover:bg-white hover:shadow-sm rounded transition-all text-gray-500"><ChevronDown size={16}/></button>
            </div>
 
-           <div className="flex items-center bg-white border border-gray-300 rounded-md px-2 py-1 shadow-sm flex-1 min-w-[150px]">
+           <div className="flex items-center bg-gray-100 rounded-lg px-3 py-1.5 flex-1 min-w-[200px]">
               <Type size={14} className="text-gray-400 mr-2 flex-shrink-0" />
               <input 
-                className="text-sm outline-none w-full min-w-0" 
+                className="text-sm bg-transparent outline-none w-full min-w-0 placeholder:text-gray-400" 
                 placeholder="替换为..." 
                 value={replaceText} 
                 onChange={e => setReplaceText(e.target.value)}
               />
            </div>
            
-           <button onClick={handleReplace} className="px-3 py-1 bg-white border border-gray-300 hover:bg-gray-50 text-xs font-medium rounded shadow-sm flex-shrink-0">替换</button>
-           <button onClick={() => setShowFindBar(false)} className="ml-auto text-gray-400 hover:text-gray-600 flex-shrink-0"><X size={16}/></button>
+           <button onClick={handleReplace} className="px-4 py-1.5 bg-blue-50 text-blue-600 hover:bg-blue-100 rounded-lg text-sm font-semibold transition-colors flex-shrink-0">替换</button>
+           <button onClick={() => setShowFindBar(false)} className="ml-auto text-gray-400 hover:text-gray-600 flex-shrink-0"><X size={18}/></button>
         </div>
       )}
 
       {/* Editor Content Area */}
-      <div className="flex-1 overflow-y-auto bg-[#F5F5F7] p-8 scroll-smooth pb-40">
-        <div className="editor-paper mx-auto w-full max-w-[800px] shadow-lg min-h-[1123px] p-[60px] cursor-text transition-all">
+      <div className="flex-1 overflow-y-auto bg-[#F9FAFB] p-8 scroll-smooth pb-20">
+        <div className="relative mx-auto w-full max-w-[800px] bg-white shadow-sm border border-gray-100/50 min-h-[1100px] p-16 cursor-text transition-all rounded-sm">
+          {/* Visual Chapter Title Hint - Non-Editable */}
+          <div className="absolute top-12 right-12 text-gray-400 font-serif text-lg opacity-30 select-none pointer-events-none">
+             {chapterTitle || 'Untitled'}
+          </div>
+
           <style>{scopedCSS}</style>
-          <div
-            ref={editorRef}
-            contentEditable
-            className="outline-none min-h-full"
-            onInput={handleInput}
-            suppressContentEditableWarning
-            data-placeholder="在此输入内容..."
-          />
+          <div className="editor-paper outline-none min-h-[900px]">
+             <div
+                ref={editorRef}
+                contentEditable
+                className="outline-none min-h-full"
+                onInput={handleInput}
+                suppressContentEditableWarning
+                data-placeholder="在此输入内容..."
+            />
+          </div>
         </div>
       </div>
 
-      {/* Status Bar */}
-      <div className="flex-none h-8 bg-white border-t border-gray-200 flex items-center justify-between px-4 text-xs text-gray-500 select-none z-20">
-         <div className="flex items-center space-x-4">
-            <span className="flex items-center"><AlignJustify size={12} className="mr-1"/> {stats.chars} 字</span>
-            <span className="flex items-center"><Clock size={12} className="mr-1"/> 约 {stats.time} 分钟阅读</span>
+      {/* Status Footer */}
+      <div className="flex-none h-10 bg-white border-t border-gray-100 flex items-center justify-between px-6 text-xs text-gray-500 select-none z-20">
+         <div className="flex items-center space-x-6">
+            <span className="flex items-center font-medium text-gray-400">
+                <AlignJustify size={14} className="mr-2 text-gray-300 transform rotate-90"/> 
+                {stats.chars} 字
+            </span>
+            <span className="flex items-center font-medium text-gray-400">
+                <Clock size={14} className="mr-2 text-gray-300"/> 
+                约 {stats.time} 分钟阅读
+            </span>
          </div>
-         <div className="flex items-center space-x-2">
-            <span>{activeStyleName}</span>
+         <div className="flex items-center">
+            <button 
+                onClick={onToggleAutoSave}
+                className="focus:outline-none"
+                title={autoSaveEnabled ? "点击关闭自动保存" : "点击开启自动保存"}
+            >
+                {!autoSaveEnabled ? (
+                     <div className="flex items-center text-gray-500 bg-gray-100 px-2.5 py-1 rounded-full border border-gray-200 hover:bg-gray-200 transition-colors">
+                        <PowerOff size={12} className="mr-1.5" />
+                        自动保存已关
+                    </div>
+                ) : saveStatus === 'saving' ? (
+                    <div className="flex items-center text-amber-500 bg-amber-50 px-2.5 py-1 rounded-full border border-amber-100 hover:bg-amber-100 transition-colors">
+                        <span className="w-1.5 h-1.5 bg-amber-500 rounded-full animate-pulse mr-2"></span>
+                        保存中...
+                    </div>
+                ) : (
+                    <div className="flex items-center text-green-600 bg-green-50 px-2.5 py-1 rounded-full border border-green-100 hover:bg-green-100 transition-colors">
+                        <CheckCircle2 size={12} className="mr-1.5" />
+                        已保存
+                    </div>
+                )}
+            </button>
          </div>
       </div>
 
       {/* Image Modal */}
       {showImageModal && (
         <div className="absolute inset-0 z-50 bg-black/20 backdrop-blur-sm flex items-center justify-center p-8">
-           <div className="bg-white rounded-2xl p-6 shadow-2xl max-w-2xl w-full max-h-[80%] flex flex-col">
+           <div className="bg-white rounded-2xl p-6 shadow-2xl max-w-2xl w-full max-h-[80%] flex flex-col animate-in zoom-in-95 duration-200">
               <div className="flex justify-between mb-4">
-                 <h3 className="font-bold">选择图片</h3>
-                 <button onClick={() => setShowImageModal(false)}><X/></button>
+                 <h3 className="font-bold text-gray-800">选择图片插入</h3>
+                 <button onClick={() => setShowImageModal(false)} className="text-gray-400 hover:text-gray-600"><X/></button>
               </div>
-              <div className="overflow-y-auto grid grid-cols-4 gap-4 p-2">
+              <div className="overflow-y-auto grid grid-cols-4 gap-4 p-2 custom-scrollbar">
                  {project.images.map((img) => (
-                    <button key={img.id} onClick={() => insertImage(img)} className="border rounded-lg p-2 hover:border-blue-500">
-                       <img src={img.data} className="w-full h-20 object-contain" />
-                       <p className="text-[10px] truncate mt-1">{img.name}</p>
+                    <button key={img.id} onClick={() => insertImage(img)} className="border border-gray-200 rounded-xl p-2 hover:border-blue-500 hover:ring-2 hover:ring-blue-100 transition-all bg-gray-50">
+                       <img src={img.data} className="w-full h-24 object-contain rounded-lg mb-2 bg-white" />
+                       <p className="text-[10px] text-gray-500 truncate w-full">{img.name}</p>
                     </button>
                  ))}
-                 {project.images.length === 0 && <p className="col-span-4 text-center text-gray-400">请先在侧边栏上传图片</p>}
+                 {project.images.length === 0 && (
+                     <div className="col-span-4 py-10 flex flex-col items-center justify-center text-gray-400 bg-gray-50 rounded-xl border border-dashed border-gray-200">
+                         <ImageIcon size={32} className="mb-2 opacity-50"/>
+                         <p>素材库为空，请先在“图片素材”中上传</p>
+                     </div>
+                 )}
               </div>
            </div>
         </div>
@@ -521,10 +687,10 @@ const ToolbarButton: React.FC<{ icon: React.ReactNode, onClick: () => void, titl
     onMouseDown={(e) => e.preventDefault()} // Prevent focus loss
     onClick={onClick} 
     title={title}
-    className={`p-2 rounded-md transition-colors ${
+    className={`p-2 rounded-lg transition-all duration-200 ${
         active 
-        ? 'bg-blue-100 text-blue-600' 
-        : 'text-gray-600 hover:bg-gray-100'
+        ? 'bg-blue-50 text-blue-600' 
+        : 'text-gray-400 hover:bg-gray-100 hover:text-gray-700'
     }`}
   >
     {icon}
