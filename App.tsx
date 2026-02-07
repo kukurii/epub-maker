@@ -10,7 +10,7 @@ import StylesView from './components/views/StylesView';
 import ImagesView from './components/views/ImagesView';
 import StructureView from './components/views/StructureView';
 import { generateEpub } from './services/epubService';
-import { BookOpen, Cloud, CheckCircle2, Loader2, PowerOff } from 'lucide-react';
+import { BookOpen, Cloud, CheckCircle2, Loader2, PowerOff, Menu } from 'lucide-react';
 
 const STORAGE_KEY = 'epub_maker_project_v1';
 
@@ -79,6 +79,7 @@ const App: React.FC = () => {
   const [isLoaded, setIsLoaded] = useState(false);
   const [saveStatus, setSaveStatus] = useState<'saved' | 'saving'>('saved');
   const [autoSaveEnabled, setAutoSaveEnabled] = useState(true);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   
   // Global loading state for long-running operations (like imports)
   const [isProcessing, setIsProcessing] = useState(false);
@@ -248,32 +249,46 @@ const App: React.FC = () => {
         />;
       case 'chapters':
         return (
-          <div className="flex flex-1 h-full overflow-hidden">
-            <Directory
-              chapters={project.chapters}
-              currentChapterId={activeChapterId}
-              onSelectChapter={handleSelectChapter}
-              onScrollToAnchor={handleScrollToAnchor}
-              onUpdateChapters={handleUpdateChapters}
-            />
-            {activeChapter ? (
-              <Editor
-                key={activeChapterId}
-                content={activeChapter.content}
-                onContentChange={handleUpdateChapterContent}
-                onSplitChapter={handleSplitChapter}
-                project={project}
-                scrollToId={scrollToAnchor}
-                saveStatus={saveStatus}
-                autoSaveEnabled={autoSaveEnabled}
-                onToggleAutoSave={toggleAutoSave}
-              />
-            ) : (
-              <div className="flex-1 flex flex-col items-center justify-center bg-gray-50 text-gray-400">
-                <BookOpen size={48} className="mb-4"/>
-                <p>请从左侧选择一个章节开始编辑</p>
-              </div>
-            )}
+          <div className="flex flex-1 h-full overflow-hidden relative">
+            {/* 
+               Mobile Layout Logic:
+               - If no active chapter, show directory (full width).
+               - If active chapter, show editor (full width).
+               Desktop Layout:
+               - Show directory (fixed width) AND editor (flex-1).
+            */}
+            <div className={`${activeChapterId ? 'hidden md:flex' : 'flex'} w-full md:w-auto h-full flex-col`}>
+                <Directory
+                    chapters={project.chapters}
+                    currentChapterId={activeChapterId}
+                    onSelectChapter={handleSelectChapter}
+                    onScrollToAnchor={handleScrollToAnchor}
+                    onUpdateChapters={handleUpdateChapters}
+                    className="w-full md:w-80"
+                />
+            </div>
+            
+            <div className={`${!activeChapterId ? 'hidden md:flex' : 'flex'} flex-1 h-full flex-col`}>
+                {activeChapter ? (
+                <Editor
+                    key={activeChapterId}
+                    content={activeChapter.content}
+                    onContentChange={handleUpdateChapterContent}
+                    onSplitChapter={handleSplitChapter}
+                    project={project}
+                    scrollToId={scrollToAnchor}
+                    saveStatus={saveStatus}
+                    autoSaveEnabled={autoSaveEnabled}
+                    onToggleAutoSave={toggleAutoSave}
+                    onMobileBack={() => setActiveChapterId(null)}
+                />
+                ) : (
+                <div className="flex-1 flex flex-col items-center justify-center bg-gray-50 text-gray-400">
+                    <BookOpen size={48} className="mb-4"/>
+                    <p>请从左侧选择一个章节开始编辑</p>
+                </div>
+                )}
+            </div>
           </div>
         );
       case 'metadata':
@@ -307,8 +322,21 @@ const App: React.FC = () => {
         onViewChange={setCurrentView}
         onExport={() => generateEpub(project)}
         onReset={handleReset}
+        isOpen={mobileMenuOpen}
+        onClose={() => setMobileMenuOpen(false)}
       />
+      
       <main className="flex-1 flex flex-col h-full overflow-hidden relative">
+        {/* Mobile Header */}
+        <div className="md:hidden flex items-center justify-between h-14 bg-white border-b border-gray-200 px-4 flex-none z-30">
+             <div className="flex items-center">
+                 <button onClick={() => setMobileMenuOpen(true)} className="p-2 -ml-2 text-gray-600 hover:bg-gray-100 rounded-lg">
+                     <Menu size={20} />
+                 </button>
+                 <span className="font-bold text-gray-800 ml-2">EPUB Maker</span>
+             </div>
+        </div>
+
         {renderView()}
         
         {/* Global Save Indicator - Only show if NOT in chapters view (Editor handles it there) */}

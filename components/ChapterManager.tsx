@@ -8,6 +8,7 @@ interface DirectoryProps {
   onSelectChapter: (id: string) => void;
   onScrollToAnchor: (chapterId: string, anchorId: string) => void;
   onUpdateChapters: (chapters: Chapter[]) => void;
+  className?: string; // Add className prop
 }
 
 const Directory: React.FC<DirectoryProps> = ({ 
@@ -15,7 +16,8 @@ const Directory: React.FC<DirectoryProps> = ({
   currentChapterId, 
   onSelectChapter, 
   onScrollToAnchor,
-  onUpdateChapters
+  onUpdateChapters,
+  className
 }) => {
   const [searchTerm, setSearchTerm] = useState('');
   
@@ -120,7 +122,7 @@ const Directory: React.FC<DirectoryProps> = ({
   );
 
   return (
-    <div className="h-full flex flex-col bg-white/70 backdrop-blur-xl border-r border-gray-200/50 relative w-80 flex-shrink-0">
+    <div className={`h-full flex flex-col bg-white/70 backdrop-blur-xl border-r border-gray-200/50 relative flex-shrink-0 ${className || 'w-80'}`}>
       {/* Header */}
       <div className="pt-6 pb-2 px-4 sticky top-0 z-10 bg-white/80 backdrop-blur-lg border-b border-gray-200/50">
         <div className="flex justify-between items-center mb-3">
@@ -147,7 +149,7 @@ const Directory: React.FC<DirectoryProps> = ({
       </div>
 
       {/* Directory List */}
-      <div className="flex-1 overflow-y-auto px-3 py-2 space-y-1">
+      <div className="flex-1 overflow-y-auto px-3 py-2 space-y-1 custom-scrollbar">
         {filteredChapters.map((chapterItem) => (
           <div key={chapterItem.id} className="mb-2">
             {/* Main Chapter Item */}

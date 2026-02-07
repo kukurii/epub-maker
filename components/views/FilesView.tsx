@@ -213,20 +213,20 @@ const FilesView: React.FC<FilesViewProps> = ({ onProjectUpdate, onChaptersLoaded
   };
 
   return (
-    <div className="p-10 flex flex-col items-center justify-center h-full bg-[#F5F5F7]">
-      <div className="bg-white/80 backdrop-blur-md p-10 rounded-[2.5rem] shadow-2xl border border-white/50 max-w-4xl w-full text-center transition-all">
-        <div className="w-20 h-20 bg-blue-500/10 rounded-full flex items-center justify-center mx-auto mb-6 text-blue-600">
-            <BookUp size={40} />
+    <div className="p-4 md:p-10 flex flex-col items-center justify-center h-full bg-[#F5F5F7] overflow-y-auto">
+      <div className="bg-white/80 backdrop-blur-md p-6 md:p-10 rounded-2xl md:rounded-[2.5rem] shadow-2xl border border-white/50 max-w-4xl w-full text-center transition-all">
+        <div className="w-16 h-16 md:w-20 md:h-20 bg-blue-500/10 rounded-full flex items-center justify-center mx-auto mb-4 md:mb-6 text-blue-600">
+            <BookUp size={32} className="md:w-10 md:h-10" />
         </div>
         
-        <h2 className="text-3xl font-bold mb-3 text-gray-900 tracking-tight">
+        <h2 className="text-2xl md:text-3xl font-bold mb-2 md:mb-3 text-gray-900 tracking-tight">
             开始创作
         </h2>
-        <p className="text-gray-500 mb-10 font-medium">
+        <p className="text-gray-500 mb-6 md:mb-10 font-medium text-sm md:text-base">
             选择一个入口或拖入文件开始您的电子书制作之旅。
         </p>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-10">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 md:gap-6 mb-6 md:mb-10">
             {/* TXT Import */}
             <label 
                 className={`relative block w-full cursor-pointer group rounded-3xl transition-all duration-300 ${
@@ -238,15 +238,15 @@ const FilesView: React.FC<FilesViewProps> = ({ onProjectUpdate, onChaptersLoaded
                 onDrop={(e) => handleDrop(e, 'txt')}
             >
               <input type="file" accept=".txt" onChange={handleTxtUpload} className="hidden" />
-              <div className={`w-full min-h-[180px] p-6 rounded-3xl shadow-xl flex flex-col items-center justify-center transition-colors border-2 border-transparent ${
+              <div className={`w-full min-h-[140px] md:min-h-[180px] p-4 md:p-6 rounded-3xl shadow-xl flex flex-col items-center justify-center transition-colors border-2 border-transparent ${
                   dragActive === 'txt' ? 'bg-gray-800 border-gray-500' : 'bg-gray-900 hover:bg-black'
               } text-white`}>
                   {dragActive === 'txt' ? (
                       <UploadCloud size={32} className="mb-4 text-white animate-bounce" />
                   ) : (
-                      <FileType size={32} className="mb-4 text-gray-400 group-hover:text-white transition-colors" />
+                      <FileType size={32} className="mb-2 md:mb-4 text-gray-400 group-hover:text-white transition-colors" />
                   )}
-                  <span className="font-bold text-lg mb-1">{dragActive === 'txt' ? '释放以导入 TXT' : '导入 TXT'}</span>
+                  <span className="font-bold text-base md:text-lg mb-1">{dragActive === 'txt' ? '释放以导入 TXT' : '导入 TXT'}</span>
                   <span className="text-[10px] opacity-60">自动切分章节</span>
               </div>
             </label>
@@ -262,15 +262,15 @@ const FilesView: React.FC<FilesViewProps> = ({ onProjectUpdate, onChaptersLoaded
                 onDrop={(e) => handleDrop(e, 'epub')}
             >
               <input type="file" accept=".epub" onChange={handleEpubUpload} className="hidden" />
-              <div className={`w-full min-h-[180px] p-6 rounded-3xl shadow-xl flex flex-col items-center justify-center transition-colors border-2 border-transparent ${
+              <div className={`w-full min-h-[140px] md:min-h-[180px] p-4 md:p-6 rounded-3xl shadow-xl flex flex-col items-center justify-center transition-colors border-2 border-transparent ${
                   dragActive === 'epub' ? 'bg-blue-500 border-white/30' : 'bg-blue-600 hover:bg-blue-700'
               } text-white`}>
                   {dragActive === 'epub' ? (
                       <UploadCloud size={32} className="mb-4 text-white animate-bounce" />
                   ) : (
-                      <BookUp size={32} className="mb-4 text-blue-200 group-hover:text-white transition-colors" />
+                      <BookUp size={32} className="mb-2 md:mb-4 text-blue-200 group-hover:text-white transition-colors" />
                   )}
-                  <span className="font-bold text-lg mb-1">{dragActive === 'epub' ? '释放以解析 EPUB' : '导入 EPUB'}</span>
+                  <span className="font-bold text-base md:text-lg mb-1">{dragActive === 'epub' ? '释放以解析 EPUB' : '导入 EPUB'}</span>
                   <span className="text-[10px] opacity-60">解析现有电子书</span>
               </div>
             </label>
@@ -286,7 +286,7 @@ const FilesView: React.FC<FilesViewProps> = ({ onProjectUpdate, onChaptersLoaded
                 onDrop={(e) => handleDrop(e, 'batch')}
             >
                 <input type="file" accept=".epub" multiple onChange={handleBatchEpubUpload} className="hidden" />
-                <div className={`w-full min-h-[180px] p-6 rounded-3xl shadow-xl flex flex-col items-center justify-center transition-all border border-white/10 ${
+                <div className={`w-full min-h-[140px] md:min-h-[180px] p-4 md:p-6 rounded-3xl shadow-xl flex flex-col items-center justify-center transition-all border border-white/10 ${
                     dragActive === 'batch' 
                     ? 'bg-gradient-to-br from-indigo-500 to-purple-500 border-white/30' 
                     : 'bg-gradient-to-br from-indigo-600 to-purple-600 hover:shadow-indigo-500/30 shadow-2xl'
@@ -294,9 +294,9 @@ const FilesView: React.FC<FilesViewProps> = ({ onProjectUpdate, onChaptersLoaded
                     {dragActive === 'batch' ? (
                       <UploadCloud size={32} className="mb-4 text-white animate-bounce" />
                     ) : (
-                      <Library size={32} className="mb-4 text-indigo-200 group-hover:text-white transition-colors" />
+                      <Library size={32} className="mb-2 md:mb-4 text-indigo-200 group-hover:text-white transition-colors" />
                     )}
-                    <span className="font-bold text-lg mb-1">{dragActive === 'batch' ? '释放以批量合并' : '批量合并'}</span>
+                    <span className="font-bold text-base md:text-lg mb-1">{dragActive === 'batch' ? '释放以批量合并' : '批量合并'}</span>
                     <span className="text-[10px] opacity-60">多卷合一模式</span>
                 </div>
             </label>
@@ -309,10 +309,10 @@ const FilesView: React.FC<FilesViewProps> = ({ onProjectUpdate, onChaptersLoaded
            {showSplitSettings && (
              <div className="mt-6 text-left bg-gray-50 p-5 rounded-2xl border border-gray-200 animate-in slide-in-from-top-2">
                 <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-3">TXT 章节切分正则 (Regex)</label>
-                <div className="flex gap-2">
+                <div className="flex flex-col md:flex-row gap-2">
                     <input 
                       type="text" 
-                      className="flex-1 font-mono text-xs bg-white border border-gray-300 rounded-xl px-4 py-2.5 text-blue-600 focus:ring-2 focus:ring-blue-500 outline-none shadow-inner" 
+                      className="flex-1 font-mono text-xs bg-white border border-gray-300 rounded-xl px-4 py-2.5 text-blue-600 focus:ring-2 focus:ring-blue-500 outline-none shadow-inner w-full" 
                       value={splitRegex} 
                       onChange={(e) => setSplitRegex(e.target.value)} 
                     />

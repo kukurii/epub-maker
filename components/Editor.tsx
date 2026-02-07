@@ -22,7 +22,10 @@ import {
   Scissors,
   Minus,
   Captions,
-  PowerOff
+  PowerOff,
+  ArrowLeft,
+  CaseSensitive,
+  WholeWord
 } from 'lucide-react';
 import { ProjectData, PRESET_STYLES, ImageAsset, TocItem } from '../types';
 
@@ -35,6 +38,7 @@ interface EditorProps {
   saveStatus?: 'saved' | 'saving';
   autoSaveEnabled: boolean;
   onToggleAutoSave: () => void;
+  onMobileBack?: () => void; // New prop for mobile back navigation
 }
 
 // --- Image Path Conversion Helpers ---
@@ -91,7 +95,8 @@ const Editor: React.FC<EditorProps> = ({
     scrollToId, 
     saveStatus = 'saved',
     autoSaveEnabled,
-    onToggleAutoSave
+    onToggleAutoSave,
+    onMobileBack
 }) => {
   const editorRef = useRef<HTMLDivElement>(null);
   const [showFindBar, setShowFindBar] = useState(false);
@@ -103,6 +108,8 @@ const Editor: React.FC<EditorProps> = ({
   // --- Search State ---
   const [matches, setMatches] = useState<Range[]>([]);
   const [currentMatchIndex, setCurrentMatchIndex] = useState(-1);
+  const [matchCase, setMatchCase] = useState(false);
+  const [wholeWord, setWholeWord] = useState(false);
   const searchUpdateRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
 
@@ -329,13 +336,30 @@ const Editor: React.FC<EditorProps> = ({
     }
 
     const fullText = textNodes.map(n => n.nodeValue).join('');
-    const searchLower = textToFind.toLowerCase();
-    const fullTextLower = fullText.toLowerCase();
+    
+    // Determine the text to search in and the pattern based on Case Sensitivity
+    const textToSearch = matchCase ? fullText : fullText.toLowerCase();
+    const pattern = matchCase ? textToFind : textToFind.toLowerCase();
 
     const ranges: Range[] = [];
     let startIndex = 0;
-    while ((startIndex = fullTextLower.indexOf(searchLower, startIndex)) > -1) {
-      const endIndex = startIndex + textToFind.length;
+    while ((startIndex = textToSearch.indexOf(pattern, startIndex)) > -1) {
+      const endIndex = startIndex + pattern.length;
+
+      // Whole Word Check
+      if (wholeWord) {
+          const prevChar = startIndex > 0 ? textToSearch[startIndex - 1] : ' ';
+          const nextChar = endIndex < textToSearch.length ? textToSearch[endIndex] : ' ';
+          // Basic check for word characters (alphanumeric + underscore). 
+          // Extended to cover some accented characters if possible, but basic \w is often sufficient for English/Code.
+          // For Chinese/Japanese, "Whole Word" usually doesn't apply the same way, but this regex won't break it.
+          const isWordChar = (c: string) => /[\w\u00C0-\u00FF]/.test(c);
+          
+          if (isWordChar(prevChar) || isWordChar(nextChar)) {
+              startIndex += 1; // Skip this occurrence
+              continue;
+          }
+      }
 
       let charCount = 0;
       let startNode, startOffset, endNode, endOffset;
@@ -367,7 +391,7 @@ const Editor: React.FC<EditorProps> = ({
       startIndex += 1;
     }
     return ranges;
-  }, []);
+  }, [matchCase, wholeWord]);
 
   useEffect(() => {
     if (searchUpdateRef.current) {
@@ -399,7 +423,7 @@ const Editor: React.FC<EditorProps> = ({
         setCurrentMatchIndex(-1);
       }
     }, 300); // Debounce search
-  }, [findText, content, runSearch, clearHighlights]);
+  }, [findText, content, runSearch, clearHighlights, matchCase, wholeWord]);
 
   useEffect(() => {
     if (!editorRef.current) return;
@@ -489,65 +513,79 @@ const Editor: React.FC<EditorProps> = ({
     <div className="flex flex-col h-full bg-[#F9FAFB] relative overflow-hidden">
       
       {/* Redesigned Toolbar */}
-      <div className="flex-none h-14 bg-white border-b border-gray-200 px-6 flex items-center justify-between z-20 shadow-[0_2px_10px_rgba(0,0,0,0.02)]">
-        <div className="flex items-center">
+      <div className="flex-none h-14 bg-white border-b border-gray-200 px-2 md:px-6 flex items-center justify-between z-20 shadow-[0_2px_10px_rgba(0,0,0,0.02)]">
+        <div className="flex items-center flex-1 overflow-x-auto no-scrollbar mask-gradient-right">
+            
+            {/* Mobile Back Button */}
+            {onMobileBack && (
+              <div className="md:hidden flex items-center mr-2 pr-2 border-r border-gray-200">
+                <button 
+                  onClick={onMobileBack}
+                  className="p-2 rounded-lg text-gray-500 hover:bg-gray-100"
+                  title="返回目录"
+                >
+                  <ArrowLeft size={18} />
+                </button>
+              </div>
+            )}
+
             {/* History */}
-            <div className="flex items-center space-x-1 mr-2">
+            <div className="flex items-center space-x-1 mr-2 flex-shrink-0">
                 <ToolbarButton icon={<RotateCcw size={16} />} onClick={() => execCmd('undo')} title="撤销" />
                 <ToolbarButton icon={<RotateCw size={16} />} onClick={() => execCmd('redo')} title="重做" />
             </div>
             
-            <div className="h-5 w-px bg-gray-200 mx-2" />
+            <div className="h-5 w-px bg-gray-200 mx-2 flex-shrink-0" />
 
             {/* Headings */}
-            <div className="flex items-center space-x-1 mx-2">
+            <div className="flex items-center space-x-1 mx-2 flex-shrink-0">
                 <ToolbarButton icon={<Heading1 size={16} />} onClick={() => toggleBlock('H1')} title="标题 1 (章节名)" />
                 <ToolbarButton icon={<Heading2 size={16} />} onClick={() => toggleBlock('H2')} title="标题 2 (小节)" />
             </div>
 
-            <div className="h-5 w-px bg-gray-200 mx-2" />
+            <div className="h-5 w-px bg-gray-200 mx-2 flex-shrink-0" />
 
             {/* Formatting */}
-            <div className="flex items-center space-x-1 mx-2">
+            <div className="flex items-center space-x-1 mx-2 flex-shrink-0">
                 <ToolbarButton icon={<Bold size={16} />} onClick={() => execCmd('bold')} />
                 <ToolbarButton icon={<Italic size={16} />} onClick={() => execCmd('italic')} />
                 <ToolbarButton icon={<Quote size={16} />} onClick={toggleBlockquote} title="引用" />
                 <ToolbarButton icon={<Captions size={16} />} onClick={toggleCaption} title="图片说明 (图注)" />
             </div>
 
-            <div className="h-5 w-px bg-gray-200 mx-2" />
+            <div className="h-5 w-px bg-gray-200 mx-2 flex-shrink-0" />
 
             {/* Lists */}
-            <div className="flex items-center space-x-1 mx-2">
+            <div className="flex items-center space-x-1 mx-2 flex-shrink-0">
                 <ToolbarButton icon={<List size={16} />} onClick={() => execCmd('insertUnorderedList')} title="无序列表" />
                 <ToolbarButton icon={<ListOrdered size={16} />} onClick={() => execCmd('insertOrderedList')} title="有序列表" />
             </div>
 
-            <div className="h-5 w-px bg-gray-200 mx-2" />
+            <div className="h-5 w-px bg-gray-200 mx-2 flex-shrink-0" />
 
             {/* Alignment */}
-            <div className="flex items-center space-x-1 mx-2">
+            <div className="flex items-center space-x-1 mx-2 flex-shrink-0">
                 <ToolbarButton icon={<AlignLeft size={16} />} onClick={() => execCmd('justifyLeft')} />
                 <ToolbarButton icon={<AlignJustify size={16} />} onClick={() => execCmd('justifyCenter')} />
             </div>
 
-            <div className="h-5 w-px bg-gray-200 mx-2" />
+            <div className="h-5 w-px bg-gray-200 mx-2 flex-shrink-0" />
 
             {/* Insert & Actions */}
-            <div className="flex items-center space-x-1 mx-2">
+            <div className="flex items-center space-x-1 mx-2 flex-shrink-0">
                 <ToolbarButton icon={<ImageIcon size={16} />} onClick={() => setShowImageModal(true)} title="插入图片" />
                 <ToolbarButton icon={<Minus size={16} />} onClick={() => execCmd('insertHorizontalRule')} title="插入分割线" />
             </div>
 
-            <div className="h-5 w-px bg-gray-200 mx-2" />
+            <div className="h-5 w-px bg-gray-200 mx-2 flex-shrink-0" />
 
              {/* Tools */}
-            <div className="flex items-center space-x-1 mx-2">
+            <div className="flex items-center space-x-1 mx-2 flex-shrink-0">
                 <ToolbarButton icon={<Scissors size={16} />} onClick={handleSplit} title="手动切分章节" />
             </div>
         </div>
 
-        <div className="flex items-center">
+        <div className="flex items-center flex-shrink-0 ml-2">
              <button 
                 onClick={() => setShowFindBar(!showFindBar)} 
                 className={`p-2 rounded-lg transition-colors ${showFindBar ? 'bg-blue-50 text-blue-600' : 'text-gray-400 hover:text-gray-600 hover:bg-gray-100'}`}
@@ -561,16 +599,34 @@ const Editor: React.FC<EditorProps> = ({
       {/* Find & Replace Bar */}
       {showFindBar && (
         <div className="flex-none bg-white border-b border-gray-200 px-6 py-2 flex flex-wrap gap-3 items-center animate-in slide-in-from-top-2 z-10 shadow-sm">
-           <div className="flex items-center bg-gray-100 rounded-lg px-3 py-1.5 flex-1 min-w-[200px]">
+           <div className="flex items-center bg-gray-100 rounded-lg px-3 py-1.5 flex-1 min-w-[150px]">
               <Search size={14} className="text-gray-400 mr-2 flex-shrink-0" />
               <input 
                 className="text-sm bg-transparent outline-none w-full min-w-0 placeholder:text-gray-400" 
-                placeholder="查找内容..." 
+                placeholder="查找..." 
                 value={findText} 
                 onChange={e => setFindText(e.target.value)}
                 onKeyDown={e => { if (e.key === 'Enter') navigateMatch('next')}}
               />
-              {findText && <span className="text-xs text-gray-400 ml-2 whitespace-nowrap tabular-nums">{matches.length > 0 ? `${currentMatchIndex + 1}/${matches.length}` : '0/0'}</span>}
+              
+              <div className="h-4 w-px bg-gray-300 mx-2 flex-shrink-0" />
+              
+              <button 
+                 onClick={() => setMatchCase(!matchCase)} 
+                 className={`p-0.5 rounded transition-colors ${matchCase ? 'bg-blue-200 text-blue-700' : 'text-gray-400 hover:text-gray-600'}`}
+                 title="区分大小写"
+              >
+                  <CaseSensitive size={14} />
+              </button>
+              <button 
+                 onClick={() => setWholeWord(!wholeWord)} 
+                 className={`ml-1 p-0.5 rounded transition-colors ${wholeWord ? 'bg-blue-200 text-blue-700' : 'text-gray-400 hover:text-gray-600'}`}
+                 title="全词匹配"
+              >
+                  <WholeWord size={14} />
+              </button>
+
+              {findText && <span className="text-xs text-gray-400 ml-2 whitespace-nowrap tabular-nums border-l border-gray-300 pl-2">{matches.length > 0 ? `${currentMatchIndex + 1}/${matches.length}` : '0/0'}</span>}
            </div>
            
            <div className="flex space-x-1 flex-shrink-0 bg-gray-100 rounded-lg p-0.5">
@@ -578,11 +634,11 @@ const Editor: React.FC<EditorProps> = ({
                <button onClick={() => navigateMatch('next')} className="p-1 hover:bg-white hover:shadow-sm rounded transition-all text-gray-500"><ChevronDown size={16}/></button>
            </div>
 
-           <div className="flex items-center bg-gray-100 rounded-lg px-3 py-1.5 flex-1 min-w-[200px]">
+           <div className="flex items-center bg-gray-100 rounded-lg px-3 py-1.5 flex-1 min-w-[150px]">
               <Type size={14} className="text-gray-400 mr-2 flex-shrink-0" />
               <input 
                 className="text-sm bg-transparent outline-none w-full min-w-0 placeholder:text-gray-400" 
-                placeholder="替换为..." 
+                placeholder="替换..." 
                 value={replaceText} 
                 onChange={e => setReplaceText(e.target.value)}
               />
@@ -594,15 +650,15 @@ const Editor: React.FC<EditorProps> = ({
       )}
 
       {/* Editor Content Area */}
-      <div className="flex-1 overflow-y-auto bg-[#F9FAFB] p-8 scroll-smooth pb-20">
-        <div className="relative mx-auto w-full max-w-[800px] bg-white shadow-sm border border-gray-100/50 min-h-[1100px] p-16 cursor-text transition-all rounded-sm">
+      <div className="flex-1 overflow-y-auto bg-[#F9FAFB] p-2 md:p-8 scroll-smooth pb-20">
+        <div className="relative mx-auto w-full max-w-[800px] bg-white shadow-sm border border-gray-100/50 min-h-[900px] md:min-h-[1100px] p-6 md:p-16 cursor-text transition-all rounded-sm">
           {/* Visual Chapter Title Hint - Non-Editable */}
-          <div className="absolute top-12 right-12 text-gray-400 font-serif text-lg opacity-30 select-none pointer-events-none">
+          <div className="absolute top-4 right-4 md:top-12 md:right-12 text-gray-400 font-serif text-sm md:text-lg opacity-30 select-none pointer-events-none">
              {chapterTitle || 'Untitled'}
           </div>
 
           <style>{scopedCSS}</style>
-          <div className="editor-paper outline-none min-h-[900px]">
+          <div className="editor-paper outline-none min-h-[600px] md:min-h-[900px]">
              <div
                 ref={editorRef}
                 contentEditable
@@ -616,13 +672,13 @@ const Editor: React.FC<EditorProps> = ({
       </div>
 
       {/* Status Footer */}
-      <div className="flex-none h-10 bg-white border-t border-gray-100 flex items-center justify-between px-6 text-xs text-gray-500 select-none z-20">
-         <div className="flex items-center space-x-6">
+      <div className="flex-none h-10 bg-white border-t border-gray-100 flex items-center justify-between px-4 md:px-6 text-xs text-gray-500 select-none z-20">
+         <div className="flex items-center space-x-3 md:space-x-6">
             <span className="flex items-center font-medium text-gray-400">
                 <AlignJustify size={14} className="mr-2 text-gray-300 transform rotate-90"/> 
                 {stats.chars} 字
             </span>
-            <span className="flex items-center font-medium text-gray-400">
+            <span className="hidden md:flex items-center font-medium text-gray-400">
                 <Clock size={14} className="mr-2 text-gray-300"/> 
                 约 {stats.time} 分钟阅读
             </span>
@@ -636,17 +692,19 @@ const Editor: React.FC<EditorProps> = ({
                 {!autoSaveEnabled ? (
                      <div className="flex items-center text-gray-500 bg-gray-100 px-2.5 py-1 rounded-full border border-gray-200 hover:bg-gray-200 transition-colors">
                         <PowerOff size={12} className="mr-1.5" />
-                        自动保存已关
+                        <span className="hidden md:inline">自动保存已关</span>
+                        <span className="md:hidden">关</span>
                     </div>
                 ) : saveStatus === 'saving' ? (
                     <div className="flex items-center text-amber-500 bg-amber-50 px-2.5 py-1 rounded-full border border-amber-100 hover:bg-amber-100 transition-colors">
                         <span className="w-1.5 h-1.5 bg-amber-500 rounded-full animate-pulse mr-2"></span>
-                        保存中...
+                        <span className="hidden md:inline">保存中...</span>
+                        <span className="md:hidden">...</span>
                     </div>
                 ) : (
                     <div className="flex items-center text-green-600 bg-green-50 px-2.5 py-1 rounded-full border border-green-100 hover:bg-green-100 transition-colors">
                         <CheckCircle2 size={12} className="mr-1.5" />
-                        已保存
+                        <span className="hidden md:inline">已保存</span>
                     </div>
                 )}
             </button>
@@ -655,13 +713,13 @@ const Editor: React.FC<EditorProps> = ({
 
       {/* Image Modal */}
       {showImageModal && (
-        <div className="absolute inset-0 z-50 bg-black/20 backdrop-blur-sm flex items-center justify-center p-8">
+        <div className="absolute inset-0 z-50 bg-black/20 backdrop-blur-sm flex items-center justify-center p-4 md:p-8">
            <div className="bg-white rounded-2xl p-6 shadow-2xl max-w-2xl w-full max-h-[80%] flex flex-col animate-in zoom-in-95 duration-200">
               <div className="flex justify-between mb-4">
                  <h3 className="font-bold text-gray-800">选择图片插入</h3>
                  <button onClick={() => setShowImageModal(false)} className="text-gray-400 hover:text-gray-600"><X/></button>
               </div>
-              <div className="overflow-y-auto grid grid-cols-4 gap-4 p-2 custom-scrollbar">
+              <div className="overflow-y-auto grid grid-cols-3 md:grid-cols-4 gap-4 p-2 custom-scrollbar">
                  {project.images.map((img) => (
                     <button key={img.id} onClick={() => insertImage(img)} className="border border-gray-200 rounded-xl p-2 hover:border-blue-500 hover:ring-2 hover:ring-blue-100 transition-all bg-gray-50">
                        <img src={img.data} className="w-full h-24 object-contain rounded-lg mb-2 bg-white" />
@@ -687,7 +745,7 @@ const ToolbarButton: React.FC<{ icon: React.ReactNode, onClick: () => void, titl
     onMouseDown={(e) => e.preventDefault()} // Prevent focus loss
     onClick={onClick} 
     title={title}
-    className={`p-2 rounded-lg transition-all duration-200 ${
+    className={`p-2 rounded-lg transition-all duration-200 flex-shrink-0 ${
         active 
         ? 'bg-blue-50 text-blue-600' 
         : 'text-gray-400 hover:bg-gray-100 hover:text-gray-700'

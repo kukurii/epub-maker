@@ -291,10 +291,10 @@ const CoverGenerator: React.FC<CoverGeneratorProps> = ({ project, onUpdateCover,
   const currentTemplate = templates[activeTemplate];
 
   return (
-    <div className="h-full flex flex-col md:flex-row p-6 gap-6 bg-[#F5F5F7] overflow-hidden relative">
+    <div className="h-full flex flex-col md:flex-row p-4 md:p-6 gap-6 bg-[#F5F5F7] overflow-y-auto md:overflow-hidden relative">
       
       {/* Left: Controls */}
-      <div className="w-full md:w-1/3 flex flex-col space-y-6 overflow-y-auto pr-2 pb-6 custom-scrollbar">
+      <div className="w-full md:w-1/3 flex flex-col space-y-6 overflow-y-visible md:overflow-y-auto pr-0 md:pr-2 pb-6 custom-scrollbar order-2 md:order-1">
         
         <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
           <h3 className="text-lg font-bold mb-4 flex items-center text-gray-800">
@@ -508,9 +508,9 @@ const CoverGenerator: React.FC<CoverGeneratorProps> = ({ project, onUpdateCover,
         </div>
       </div>
 
-      <div className="w-full md:w-2/3 bg-gray-200/50 rounded-3xl border border-gray-200 flex flex-col items-center justify-center p-8 relative overflow-hidden">
+      <div className="w-full md:w-2/3 bg-gray-200/50 md:rounded-3xl border border-gray-200 flex flex-col items-center justify-center p-8 relative overflow-hidden order-1 md:order-2 min-h-[400px]">
          <div className="absolute inset-0 pattern-grid opacity-10 pointer-events-none"></div>
-         <div className="relative group mb-8">
+         <div className="relative group mb-8 transform scale-75 md:scale-100 transition-transform origin-center">
             <div className="absolute -inset-4 bg-white/40 blur-xl rounded-full opacity-0 group-hover:opacity-100 transition-opacity"></div>
             <div 
               id="cover-preview"

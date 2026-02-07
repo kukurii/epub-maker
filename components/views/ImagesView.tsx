@@ -121,10 +121,10 @@ const ImagesView: React.FC<ImagesViewProps> = ({ images, onUpdateImages }) => {
   };
 
   return (
-    <div className="p-8 h-full bg-[#F5F5F7] overflow-y-auto" onDragEnter={handleDrag} onDragLeave={handleDrag} onDragOver={handleDrag} onDrop={handleDrop}>
+    <div className="p-4 md:p-8 h-full bg-[#F5F5F7] overflow-y-auto" onDragEnter={handleDrag} onDragLeave={handleDrag} onDragOver={handleDrag} onDrop={handleDrop}>
       <div className="flex justify-between items-center mb-6">
-        <h2 className="text-3xl font-bold text-gray-900 tracking-tight">图片素材</h2>
-        <span className="text-sm font-medium text-gray-400 bg-white px-3 py-1 rounded-full border border-gray-200">{images.length} 张图片</span>
+        <h2 className="text-2xl md:text-3xl font-bold text-gray-900 tracking-tight">图片素材</h2>
+        <span className="text-xs md:text-sm font-medium text-gray-400 bg-white px-3 py-1 rounded-full border border-gray-200">{images.length} 张图片</span>
       </div>
 
       <div 
@@ -153,7 +153,7 @@ const ImagesView: React.FC<ImagesViewProps> = ({ images, onUpdateImages }) => {
           </div>
       )}
 
-      <div className="grid grid-cols-[repeat(auto-fill,minmax(150px,1fr))] gap-6">
+      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-[repeat(auto-fill,minmax(150px,1fr))] gap-4 md:gap-6">
          {images.map((img) => (
             <ImageCard key={img.id} image={img} onDelete={handleDelete} />
          ))}

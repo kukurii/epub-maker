@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Sparkles, Loader2, Code, Settings, X, Key, Plus, ChevronDown, ChevronUp, BookTemplate, Info, ArrowRight } from 'lucide-react';
+import { Sparkles, Loader2, Code, Settings, X, Key, Plus, ChevronDown, ChevronUp, BookTemplate, Info, ArrowRight, ExternalLink } from 'lucide-react';
 import { ProjectData, PRESET_STYLES, Chapter } from '../../types';
 import { GoogleGenAI } from '@google/genai';
 
@@ -175,19 +175,42 @@ const StylesView: React.FC<StylesViewProps> = ({ project, activeChapter, onUpdat
   const [isAiGenerating, setIsAiGenerating] = useState(false);
   const [stylePreviewMode, setStylePreviewMode] = useState<'chapter' | 'toc'>('chapter');
   const [showSnippets, setShowSnippets] = useState(false);
+  const [showApiConfig, setShowApiConfig] = useState(false);
+  const [userApiKey, setUserApiKey] = useState('');
   
   // Snippet Info Modal State
   const [infoSnippet, setInfoSnippet] = useState<SnippetItem | null>(null);
 
   const isPresetActive = project.isPresetStyleActive !== false;
 
+  useEffect(() => {
+    const storedKey = localStorage.getItem('epub_maker_gemini_key');
+    if (storedKey) {
+        setUserApiKey(storedKey);
+    }
+  }, []);
+
+  const handleApiKeyChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+      const val = e.target.value;
+      setUserApiKey(val);
+      localStorage.setItem('epub_maker_gemini_key', val);
+  };
+
   const handleAiGenerateCss = async () => {
     if (!aiPrompt || isAiGenerating) return;
     
-    // FIX: Removed custom API key handling to use process.env.API_KEY exclusively.
+    // Prioritize user-provided key, fallback to env key
+    const apiKey = userApiKey || process.env.API_KEY;
+
+    if (!apiKey) {
+        alert("请先点击设置按钮配置 Gemini API Key");
+        setShowApiConfig(true);
+        return;
+    }
+    
     setIsAiGenerating(true);
     try {
-        const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+        const ai = new GoogleGenAI({ apiKey });
         
         const activeStyle = PRESET_STYLES.find(s => s.id === project.activeStyleId) || PRESET_STYLES[0];
         const baseCssForContext = isPresetActive ? activeStyle.css : '/* No base theme active. Generate from scratch. */ body { font-family: sans-serif; }';
@@ -233,7 +256,7 @@ const StylesView: React.FC<StylesViewProps> = ({ project, activeChapter, onUpdat
 
     } catch (error) {
         console.error("AI CSS generation failed:", error);
-        alert("AI 样式生成失败，请检查 API Key 或网络连接。");
+        alert("AI 样式生成失败，请检查 API Key 是否正确或网络连接。");
     } finally {
         setIsAiGenerating(false);
     }
@@ -273,8 +296,8 @@ const StylesView: React.FC<StylesViewProps> = ({ project, activeChapter, onUpdat
   const iframeSrc = `<!DOCTYPE html><html lang="zh"><head><meta charset="utf-8"><style>html, body { margin: 0; padding: 0; min-height: 100%; width: 100%; box-sizing: border-box; } ${presetCss} ${safeCustomCSS} ${safeExtraCSS}</style></head><body>${previewContent}</body></html>`;
 
   return (
-    <div className="flex h-full bg-[#F5F5F7] relative">
-        <div className="w-96 flex-none flex flex-col border-r border-gray-200 bg-white p-6 overflow-y-auto space-y-8 z-10">
+    <div className="flex flex-col md:flex-row h-full bg-[#F5F5F7] relative">
+        <div className="w-full md:w-96 flex-none flex flex-col border-b md:border-b-0 md:border-r border-gray-200 bg-white p-4 md:p-6 overflow-y-auto space-y-6 md:space-y-8 z-10">
             <div>
                <div className="flex justify-between items-center mb-4">
                  <h2 className="text-xl font-bold text-gray-800">预设主题</h2>
@@ -299,13 +322,54 @@ const StylesView: React.FC<StylesViewProps> = ({ project, activeChapter, onUpdat
             </div>
 
             <div className="flex-1 flex flex-col min-h-[300px]">
-                {/* FIX: Removed custom API key management UI. */}
                 <div className="relative">
                     <h2 className="text-xl font-bold mb-4 text-gray-800 flex items-center justify-between">
                         <div className="flex items-center">
                             <Sparkles size={20} className="mr-2 text-yellow-500"/> AI 魔法样式
                         </div>
+                        <button
+                            onClick={() => setShowApiConfig(!showApiConfig)}
+                            className={`p-1.5 rounded-lg transition-colors ${showApiConfig ? 'bg-blue-100 text-blue-600' : 'text-gray-400 hover:text-blue-600 hover:bg-blue-50'}`}
+                            title="配置 Gemini API"
+                        >
+                            <Settings size={16} />
+                        </button>
                     </h2>
+                    
+                    {/* API Config Popup */}
+                    {showApiConfig && (
+                        <div className="absolute top-10 right-0 z-50 w-72 bg-white rounded-2xl shadow-[0_10px_40px_-10px_rgba(0,0,0,0.15)] border border-gray-100 p-4 animate-in fade-in zoom-in-95 duration-200">
+                            <div className="flex justify-between items-center mb-3 border-b border-gray-100 pb-2">
+                                <h4 className="text-xs font-bold text-gray-800 flex items-center">
+                                    <Key size={12} className="mr-1.5 text-blue-500"/> Gemini API Configuration
+                                </h4>
+                                <button onClick={() => setShowApiConfig(false)} className="text-gray-400 hover:text-gray-600"><X size={14}/></button>
+                            </div>
+                            <div className="space-y-3 mb-2">
+                                <p className="text-[10px] text-gray-500 leading-relaxed">
+                                    请输入您的 Google Gemini API Key 以使用 AI 功能。
+                                </p>
+                                <input 
+                                    type="password" 
+                                    className="w-full bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-xs focus:ring-2 focus:ring-blue-500 outline-none transition-all placeholder:text-gray-300"
+                                    placeholder="sk-..."
+                                    value={userApiKey}
+                                    onChange={handleApiKeyChange}
+                                />
+                                <div className="flex justify-between items-center pt-2">
+                                     <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener noreferrer" className="text-[10px] text-blue-500 hover:underline flex items-center">
+                                        获取 API Key <ExternalLink size={10} className="ml-1"/>
+                                     </a>
+                                     <button 
+                                        onClick={() => setShowApiConfig(false)}
+                                        className="text-xs font-medium text-white bg-blue-600 px-3 py-1.5 rounded-lg hover:bg-blue-700 transition-colors"
+                                     >
+                                         完成
+                                     </button>
+                                </div>
+                            </div>
+                        </div>
+                    )}
                 </div>
 
                 <div className="bg-gradient-to-br from-blue-50 to-indigo-50 p-4 rounded-xl border border-blue-100 space-y-3 mb-6">
@@ -356,12 +420,12 @@ const StylesView: React.FC<StylesViewProps> = ({ project, activeChapter, onUpdat
                     </div>
                 )}
 
-                <textarea className="flex-1 w-full bg-gray-900 text-green-400 font-mono text-xs p-4 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none shadow-inner" placeholder="/* 输入 CSS 覆盖样式，或使用上方按钮插入常用样式 */" value={project.customCSS} onChange={(e) => onUpdateProject({ customCSS: e.target.value })} />
+                <textarea className="flex-1 w-full bg-gray-900 text-green-400 font-mono text-xs p-4 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none shadow-inner min-h-[150px]" placeholder="/* 输入 CSS 覆盖样式，或使用上方按钮插入常用样式 */" value={project.customCSS} onChange={(e) => onUpdateProject({ customCSS: e.target.value })} />
             </div>
         </div>
 
-        <div className="flex-1 bg-gray-100 p-8 overflow-y-auto flex justify-center">
-            <div className="w-full max-w-[800px] h-[1000px] bg-white shadow-xl">
+        <div className="flex-1 bg-gray-100 p-4 md:p-8 overflow-y-auto flex justify-center">
+            <div className="w-full max-w-[800px] h-[600px] md:h-[1000px] bg-white shadow-xl">
                  <iframe title="Style Preview" srcDoc={iframeSrc} className="w-full h-full border-none" />
             </div>
         </div>
