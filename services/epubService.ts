@@ -59,32 +59,6 @@ export const generateEpub = async (project: ProjectData) => {
   }
 
   // --- Images Processing ---
-  let coverFilename = '';
-  if (project.cover) {
-    const coverData = project.cover.split(',')[1]; 
-    const isPng = project.cover.startsWith('data:image/png');
-    coverFilename = isPng ? 'cover.png' : 'cover.jpg';
-    oebps.file(coverFilename, coverData, { base64: true });
-    
-    // cover.xhtml - Updated to use external CSS and classes
-    const coverXhtml = `<?xml version="1.0" encoding="utf-8"?>
-<!DOCTYPE html>
-<html xmlns="http://www.w3.org/1999/xhtml">
-<head>
-  <title>Cover</title>
-  <link rel="stylesheet" type="text/css" href="style.css"/>
-  ${extraCssLinks.join('\n  ')}
-</head>
-<body class="cover-page">
-  <div class="cover-container">
-     <img src="${coverFilename}" alt="Cover Image" class="cover-image" />
-  </div>
-</body>
-</html>`;
-    oebps.file('cover.xhtml', coverXhtml);
-  }
-
-  // Other images map
   const imageMapByName = new Map<string, string>();
   const imageMapById = new Map<string, string>();
   
@@ -103,6 +77,49 @@ export const generateEpub = async (project: ProjectData) => {
     
     oebps.file(`images/${uniqueFilename}`, imgData, { base64: true });
   });
+
+  // --- Cover Logic ---
+  let coverFilename = '';
+  let isCoverFromImages = false;
+
+  // Attempt to use referenced image for cover if available
+  if (project.coverId) {
+      const referencedImg = project.images.find(i => i.id === project.coverId);
+      if (referencedImg) {
+          const uniqueName = imageMapById.get(referencedImg.id);
+          if (uniqueName) {
+              coverFilename = `images/${uniqueName}`;
+              isCoverFromImages = true;
+          }
+      }
+  }
+
+  // Fallback to generating standalone cover file if no valid reference
+  if (!isCoverFromImages && project.cover) {
+    const coverData = project.cover.split(',')[1]; 
+    const isPng = project.cover.startsWith('data:image/png');
+    coverFilename = isPng ? 'cover.png' : 'cover.jpg';
+    oebps.file(coverFilename, coverData, { base64: true });
+  }
+
+  // Write cover.xhtml if there is a cover
+  if (coverFilename) {
+    const coverXhtml = `<?xml version="1.0" encoding="utf-8"?>
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+  <title>Cover</title>
+  <link rel="stylesheet" type="text/css" href="style.css"/>
+  ${extraCssLinks.join('\n  ')}
+</head>
+<body class="cover-page">
+  <div class="cover-container">
+     <img src="${coverFilename}" alt="Cover Image" class="cover-image" />
+  </div>
+</body>
+</html>`;
+    oebps.file('cover.xhtml', coverXhtml);
+  }
 
   const processContent = (htmlContent: string) => {
      const parser = new DOMParser();
@@ -178,10 +195,16 @@ export const generateEpub = async (project: ProjectData) => {
   let manifestItems = '';
   let spineItems = '';
 
-  if (project.cover) {
-    manifestItems += `<item id="cover-image" href="${coverFilename}" media-type="${project.cover.startsWith('data:image/png') ? 'image/png' : 'image/jpeg'}"/>\n`;
-    manifestItems += `<item id="cover" href="cover.xhtml" media-type="application/xhtml+xml"/>\n`;
-    spineItems += `<itemref idref="cover"/>\n`;
+  // Handle Cover Item in Manifest
+  if (coverFilename) {
+      if (!isCoverFromImages) {
+        // Standalone cover file needs its own item entry
+        const mediaType = project.cover?.startsWith('data:image/png') ? 'image/png' : 'image/jpeg';
+        manifestItems += `<item id="cover-image" href="${coverFilename}" media-type="${mediaType}"/>\n`;
+      }
+      // cover.xhtml
+      manifestItems += `<item id="cover" href="cover.xhtml" media-type="application/xhtml+xml"/>\n`;
+      spineItems += `<itemref idref="cover"/>\n`;
   }
 
   manifestItems += `<item id="toc" href="toc.xhtml" media-type="application/xhtml+xml"/>\n`;
@@ -223,6 +246,16 @@ export const generateEpub = async (project: ProjectData) => {
       });
   }
 
+  // Determine the ID of the cover image item for the <meta name="cover"> tag
+  let coverImageMetaId = '';
+  if (coverFilename) {
+      if (isCoverFromImages && project.coverId) {
+          coverImageMetaId = `img_${project.coverId}`;
+      } else {
+          coverImageMetaId = 'cover-image';
+      }
+  }
+
   const opfContent = `<?xml version="1.0" encoding="utf-8"?>
 <package xmlns="http://www.idpf.org/2007/opf" unique-identifier="BookId" version="2.0">
   <metadata xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:opf="http://www.idpf.org/2007/opf">
@@ -232,7 +265,7 @@ export const generateEpub = async (project: ProjectData) => {
     <dc:identifier id="BookId" opf:scheme="UUID">${uid}</dc:identifier>
     <dc:description>${project.metadata.description}</dc:description>
     ${extraMetadata}
-    ${project.cover ? '<meta name="cover" content="cover-image" />' : ''}
+    ${coverImageMetaId ? `<meta name="cover" content="${coverImageMetaId}" />` : ''}
   </metadata>
   <manifest>
     ${manifestItems}
@@ -241,7 +274,7 @@ export const generateEpub = async (project: ProjectData) => {
     ${spineItems}
   </spine>
   <guide>
-    ${project.cover ? '<reference type="cover" title="Cover" href="cover.xhtml"/>' : ''}
+    ${coverFilename ? '<reference type="cover" title="Cover" href="cover.xhtml"/>' : ''}
     <reference type="toc" title="Table of Contents" href="toc.xhtml"/>
   </guide>
 </package>`;
@@ -252,7 +285,7 @@ export const generateEpub = async (project: ProjectData) => {
   let navPoints = '';
   let playOrder = 1;
 
-  if (project.cover) {
+  if (coverFilename) {
     navPoints += `
     <navPoint id="navPoint-cover" playOrder="${playOrder++}">
       <navLabel><text>Cover</text></navLabel>

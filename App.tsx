@@ -10,7 +10,7 @@ import StylesView from './components/views/StylesView';
 import ImagesView from './components/views/ImagesView';
 import StructureView from './components/views/StructureView';
 import { generateEpub } from './services/epubService';
-import { BookOpen, Cloud, CheckCircle2, Loader2, PowerOff, Menu } from 'lucide-react';
+import { BookOpen, Loader2, Menu, PowerOff, Cloud, CheckCircle2, AlertTriangle } from 'lucide-react';
 
 const STORAGE_KEY = 'epub_maker_project_v1';
 
@@ -49,25 +49,32 @@ const getInitialState = (): ProjectData => ({
     images: [],
     extraFiles: [],
     cover: null,
+    coverId: null,
     coverCustomCSS: '',
     coverDesign: { ...INITIAL_COVER_DESIGN },
     activeStyleId: 'classic',
     isPresetStyleActive: true,
-    customCSS: ''
+    customCSS: '',
+    coverGeneratorState: {
+        selectedBgImageId: null,
+        activeTemplateIndex: 0,
+        showTextOnCover: true,
+        aiCoverPrompt: ''
+    }
 });
 
 // Loading Overlay Component
 const LoadingOverlay: React.FC<{ message?: string }> = ({ message = 'Loading...' }) => (
-  <div className="fixed inset-0 z-[100] bg-white/80 dark:bg-gray-950/80 backdrop-blur-md flex flex-col items-center justify-center animate-in fade-in duration-300">
-      <div className="bg-white dark:bg-gray-900 p-8 rounded-3xl shadow-2xl border border-gray-100 dark:border-gray-800 flex flex-col items-center max-w-sm w-full mx-4">
+  <div className="fixed inset-0 z-[100] bg-white/80 backdrop-blur-md flex flex-col items-center justify-center animate-in fade-in duration-300">
+      <div className="bg-white p-8 rounded-3xl shadow-2xl border border-gray-100 flex flex-col items-center max-w-sm w-full mx-4">
           <div className="relative mb-6">
               <div className="absolute inset-0 bg-blue-500 rounded-full blur-xl opacity-20 animate-pulse"></div>
               <div className="relative bg-gradient-to-tr from-blue-600 to-indigo-600 text-white p-4 rounded-2xl shadow-lg">
                   <Loader2 size={32} className="animate-spin" />
               </div>
           </div>
-          <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-2 tracking-tight">请稍候</h3>
-          <p className="text-sm text-gray-500 dark:text-gray-400 text-center font-medium">{message}</p>
+          <h3 className="text-lg font-bold text-gray-900 mb-2 tracking-tight">请稍候</h3>
+          <p className="text-sm text-gray-500 text-center font-medium">{message}</p>
       </div>
   </div>
 );
@@ -77,16 +84,16 @@ const App: React.FC = () => {
   const [activeChapterId, setActiveChapterId] = useState<string | null>(null);
   const [scrollToAnchor, setScrollToAnchor] = useState<string | null>(null);
   const [isLoaded, setIsLoaded] = useState(false);
-  const [saveStatus, setSaveStatus] = useState<'saved' | 'saving'>('saved');
-  const [autoSaveEnabled, setAutoSaveEnabled] = useState(true);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [resetKey, setResetKey] = useState(0); // Key to force re-render of views on reset
   
+  // Auto-save states
+  const [saveStatus, setSaveStatus] = useState<'saved' | 'saving' | 'error'>('saved');
+  const [autoSaveEnabled, setAutoSaveEnabled] = useState(true);
+
   // Global loading state for long-running operations (like imports)
   const [isProcessing, setIsProcessing] = useState(false);
   const [processMessage, setProcessMessage] = useState('');
-
-  // Ref to strictly block auto-save when resetting
-  const isResettingRef = useRef(false);
 
   const [project, setProject] = useState<ProjectData>(getInitialState());
 
@@ -103,6 +110,12 @@ const App: React.FC = () => {
             coverDesign: parsed.coverDesign || { ...INITIAL_COVER_DESIGN },
             extraFiles: parsed.extraFiles || [],
             isPresetStyleActive: parsed.isPresetStyleActive !== undefined ? parsed.isPresetStyleActive : true,
+            coverGeneratorState: parsed.coverGeneratorState || {
+                selectedBgImageId: null,
+                activeTemplateIndex: 0,
+                showTextOnCover: true,
+                aiCoverPrompt: ''
+            }
         });
         if (parsed.chapters && parsed.chapters.length > 0) {
            setActiveChapterId(parsed.chapters[0].id);
@@ -118,34 +131,40 @@ const App: React.FC = () => {
 
   // Auto-save Effect
   useEffect(() => {
-    if (isLoaded && !isResettingRef.current && autoSaveEnabled) {
+    if (isLoaded && autoSaveEnabled) {
       setSaveStatus('saving');
       const timeoutId = setTimeout(() => {
-        // Double check ref before writing
-        if (!isResettingRef.current) {
-            localStorage.setItem(STORAGE_KEY, JSON.stringify(project));
-            setSaveStatus('saved');
-        }
+          try {
+              localStorage.setItem(STORAGE_KEY, JSON.stringify(project));
+              setSaveStatus('saved');
+          } catch (e: any) {
+              console.error("Save failed", e);
+              setSaveStatus('error');
+              
+              // Handle Quota Exceeded specifically
+              if (e.name === 'QuotaExceededError' || e.name === 'NS_ERROR_DOM_QUOTA_REACHED') {
+                  alert("⚠️ 存储空间不足！\n\n项目内容（特别是图片）已超过浏览器本地存储限制。\n自动保存已暂停，请删除部分图片或导出项目后再试。");
+                  setAutoSaveEnabled(false);
+              }
+          }
       }, 1000); // 1 second debounce
       return () => clearTimeout(timeoutId);
     }
   }, [project, isLoaded, autoSaveEnabled]);
 
   const handleReset = () => {
-    isResettingRef.current = true; // Block auto-save
-    localStorage.removeItem(STORAGE_KEY);
+    // 1. Disable Auto-save immediately
+    setAutoSaveEnabled(false);
     
-    // Reset state to a completely fresh object
-    setProject(getInitialState());
-    setActiveChapterId(null);
-    setCurrentView('files');
-    setSaveStatus('saved'); // Reset status
-    setAutoSaveEnabled(true); // Reset auto-save to enabled
-
-    // Keep the block active long enough for state updates to settle
-    setTimeout(() => {
-      isResettingRef.current = false;
-    }, 1000);
+    // 2. Clear LocalStorage
+    try {
+        localStorage.removeItem(STORAGE_KEY);
+    } catch (e) {
+        console.error("Failed to clear storage:", e);
+    }
+    
+    // 3. Force page reload
+    window.location.reload();
   };
 
   const handleUpdateProject = (updates: Partial<ProjectData>) => {
@@ -231,9 +250,13 @@ const App: React.FC = () => {
   const handleLoadingEnd = () => {
       setIsProcessing(false);
   };
-
+  
   const toggleAutoSave = () => {
     setAutoSaveEnabled(prev => !prev);
+    // If enabling, trigger a save immediately to check/sync
+    if (!autoSaveEnabled) {
+        setProject(p => ({...p})); 
+    }
   };
 
   const activeChapter = project.chapters.find(c => c.id === activeChapterId);
@@ -250,13 +273,6 @@ const App: React.FC = () => {
       case 'chapters':
         return (
           <div className="flex flex-1 h-full overflow-hidden relative">
-            {/* 
-               Mobile Layout Logic:
-               - If no active chapter, show directory (full width).
-               - If active chapter, show editor (full width).
-               Desktop Layout:
-               - Show directory (fixed width) AND editor (flex-1).
-            */}
             <div className={`${activeChapterId ? 'hidden md:flex' : 'flex'} w-full md:w-auto h-full flex-col`}>
                 <Directory
                     chapters={project.chapters}
@@ -277,9 +293,6 @@ const App: React.FC = () => {
                     onSplitChapter={handleSplitChapter}
                     project={project}
                     scrollToId={scrollToAnchor}
-                    saveStatus={saveStatus}
-                    autoSaveEnabled={autoSaveEnabled}
-                    onToggleAutoSave={toggleAutoSave}
                     onMobileBack={() => setActiveChapterId(null)}
                 />
                 ) : (
@@ -300,9 +313,12 @@ const App: React.FC = () => {
       case 'cover':
         return <CoverGenerator 
                   project={project} 
-                  onUpdateCover={(cover) => handleUpdateProject({ cover })} 
+                  onUpdateCover={(cover, coverId) => handleUpdateProject({ cover, coverId: coverId || null })} 
                   onUpdateCoverCSS={(coverCustomCSS) => handleUpdateProject({ coverCustomCSS })}
                   onUpdateCoverDesign={(coverDesign) => handleUpdateProject({ coverDesign })}
+                  onAddImage={(img) => handleUpdateProject({ images: [...project.images, img] })}
+                  coverGeneratorState={project.coverGeneratorState}
+                  onUpdateGeneratorState={(state) => handleUpdateProject({ coverGeneratorState: { ...project.coverGeneratorState, ...state } })}
                />;
       case 'structure':
         return <StructureView project={project} onUpdateProject={handleUpdateProject} />;
@@ -316,7 +332,7 @@ const App: React.FC = () => {
   }
 
   return (
-    <div className="flex h-screen bg-white font-sans dark:bg-gray-950">
+    <div className="flex h-screen bg-white font-sans text-gray-900">
       <Sidebar
         currentView={currentView}
         onViewChange={setCurrentView}
@@ -337,33 +353,39 @@ const App: React.FC = () => {
              </div>
         </div>
 
-        {renderView()}
+        {/* View Container with Key for Reset */}
+        <div key={resetKey} className="flex-1 flex flex-col h-full overflow-hidden relative">
+            {renderView()}
+        </div>
         
-        {/* Global Save Indicator - Only show if NOT in chapters view (Editor handles it there) */}
-        {currentView !== 'chapters' && (
-            <button 
-                onClick={toggleAutoSave}
-                className="absolute bottom-4 right-4 z-50 transition-transform active:scale-95 focus:outline-none"
-                title={autoSaveEnabled ? "点击关闭自动保存" : "点击开启自动保存"}
-            >
-              {!autoSaveEnabled ? (
-                <div className="flex items-center text-xs text-gray-500 bg-gray-100/80 backdrop-blur-md py-1.5 px-3 rounded-full shadow-md border border-gray-200 hover:bg-gray-200/80">
-                  <PowerOff size={14} className="mr-2"/>
-                  自动保存已关
-                </div>
-              ) : saveStatus === 'saving' ? (
-                <div className="flex items-center text-xs text-amber-600 bg-amber-50/80 backdrop-blur-md py-1.5 px-3 rounded-full shadow-md animate-in fade-in border border-amber-100 hover:bg-amber-100/80">
-                  <Cloud size={14} className="mr-2"/>
-                  保存中...
-                </div>
-              ) : (
-                <div className="flex items-center text-xs text-green-600 bg-green-50/80 backdrop-blur-md py-1.5 px-3 rounded-full shadow-md animate-in fade-in border border-green-100 hover:bg-green-100/80">
-                  <CheckCircle2 size={14} className="mr-2"/>
-                  已保存
-                </div>
-              )}
-            </button>
-        )}
+        {/* Global Save Indicator */}
+        <button 
+            onClick={toggleAutoSave}
+            className="absolute bottom-4 right-4 z-50 transition-transform active:scale-95 focus:outline-none"
+            title={autoSaveEnabled ? "点击关闭自动保存" : "点击开启自动保存"}
+        >
+          {!autoSaveEnabled ? (
+            <div className="flex items-center text-xs text-gray-500 bg-gray-100/80 backdrop-blur-md py-1.5 px-3 rounded-full shadow-md border border-gray-200 hover:bg-gray-200/80">
+              <PowerOff size={14} className="mr-2"/>
+              自动保存已关
+            </div>
+          ) : saveStatus === 'saving' ? (
+            <div className="flex items-center text-xs text-amber-600 bg-amber-50/80 backdrop-blur-md py-1.5 px-3 rounded-full shadow-md animate-in fade-in border border-amber-100 hover:bg-amber-100/80">
+              <Cloud size={14} className="mr-2 animate-pulse"/>
+              保存中...
+            </div>
+          ) : saveStatus === 'error' ? (
+             <div className="flex items-center text-xs text-red-600 bg-red-50/90 backdrop-blur-md py-1.5 px-3 rounded-full shadow-md animate-in fade-in border border-red-200 hover:bg-red-100/80">
+               <AlertTriangle size={14} className="mr-2"/>
+               保存失败(容量不足)
+             </div>
+          ) : (
+            <div className="flex items-center text-xs text-green-600 bg-green-50/80 backdrop-blur-md py-1.5 px-3 rounded-full shadow-md animate-in fade-in border border-green-100 hover:bg-green-100/80">
+              <CheckCircle2 size={14} className="mr-2"/>
+              已保存
+            </div>
+          )}
+        </button>
         
         {/* Global Process Overlay */}
         {isProcessing && <LoadingOverlay message={processMessage} />}

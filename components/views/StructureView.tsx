@@ -211,18 +211,25 @@ const StructureView: React.FC<StructureViewProps> = ({ project, onUpdateProject 
     });
 
     if (project.cover) {
+       // Check if this is a reference to an existing image
+       const isReferenced = !!project.coverId && project.images.some(i => i.id === project.coverId);
        const size = getImageByteSize(project.cover);
-       total += size;
-       images.unshift({
-           id: 'cover-img',
-           name: project.cover.startsWith('data:image/png') ? 'cover.png' : 'cover.jpg',
-           type: 'file',
-           fileType: 'image',
-           sizeBytes: size,
-           isEditable: false,
-           dataUrl: project.cover,
-           canRename: false
-       });
+       
+       // Only count size and show separate cover node if NOT referenced
+       // If referenced, the size is already counted in the 'images' array above, and the file lives in images/
+       if (!isReferenced) {
+           total += size;
+           images.unshift({
+               id: 'cover-img',
+               name: project.cover.startsWith('data:image/png') ? 'cover.png' : 'cover.jpg',
+               type: 'file',
+               fileType: 'image',
+               sizeBytes: size,
+               isEditable: false,
+               dataUrl: project.cover,
+               canRename: false
+           });
+       }
     }
 
     const chapters: FileNode[] = (project.chapters || []).map((c, idx) => {

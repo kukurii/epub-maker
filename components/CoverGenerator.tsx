@@ -1,15 +1,17 @@
-
-import React, { useRef, useState } from 'react';
+import React, { useRef, useState, useEffect } from 'react';
 import * as htmlToImage from 'html-to-image';
-import { ProjectData, CoverDesign } from '../types';
+import { ProjectData, CoverDesign, ImageAsset, CoverGeneratorState } from '../types';
 import { Upload, Camera, Type, Check, Code, Loader2, Sparkles, Library, X, ChevronDown, ChevronUp, Palette, Plus, Settings2, Info } from 'lucide-react';
 import { GoogleGenAI } from '@google/genai';
 
 interface CoverGeneratorProps {
   project: ProjectData;
-  onUpdateCover: (dataUrl: string) => void;
+  onUpdateCover: (dataUrl: string | null, coverId?: string | null) => void;
   onUpdateCoverCSS: (css: string) => void;
   onUpdateCoverDesign?: (design: CoverDesign) => void;
+  onAddImage?: (image: ImageAsset) => void;
+  coverGeneratorState?: CoverGeneratorState;
+  onUpdateGeneratorState?: (state: Partial<CoverGeneratorState>) => void;
 }
 
 // --- Configuration Types ---
@@ -154,20 +156,77 @@ display: inline-block;`
   }
 ];
 
-const CoverGenerator: React.FC<CoverGeneratorProps> = ({ project, onUpdateCover, onUpdateCoverCSS, onUpdateCoverDesign }) => {
+const CoverGenerator: React.FC<CoverGeneratorProps> = ({ 
+    project, 
+    onUpdateCover, 
+    onUpdateCoverCSS, 
+    onUpdateCoverDesign, 
+    onAddImage,
+    coverGeneratorState,
+    onUpdateGeneratorState 
+}) => {
   const coverRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const [activeTemplate, setActiveTemplate] = useState(0);
   const [status, setStatus] = useState<'idle' | 'generating' | 'success'>('idle');
   const [showCssEditor, setShowCssEditor] = useState(false); // Default hidden
-  const [aiCoverPrompt, setAiCoverPrompt] = useState('');
   const [isAiGenerating, setIsAiGenerating] = useState(false);
+
+  // Initialize state from props or defaults
+  const [activeTemplate, setActiveTemplate] = useState(coverGeneratorState?.activeTemplateIndex || 0);
+  const [selectedBgImageId, setSelectedBgImageId] = useState<string | null>(coverGeneratorState?.selectedBgImageId || null);
+  const [showTextOnCover, setShowTextOnCover] = useState(coverGeneratorState?.showTextOnCover !== undefined ? coverGeneratorState.showTextOnCover : true);
+  const [aiCoverPrompt, setAiCoverPrompt] = useState(coverGeneratorState?.aiCoverPrompt || '');
   const [selectedBgImage, setSelectedBgImage] = useState<string | null>(null);
-  const [showTextOnCover, setShowTextOnCover] = useState(true);
 
   // --- Snippet Modal State ---
   const [activeSnippet, setActiveSnippet] = useState<SnippetTemplate | null>(null);
   const [snippetValues, setSnippetValues] = useState<Record<string, any>>({});
+
+  // Resolve Background Image Data on Mount or ID Change
+  useEffect(() => {
+    if (selectedBgImageId) {
+        const img = project.images.find(i => i.id === selectedBgImageId);
+        if (img) setSelectedBgImage(img.data);
+    } else {
+        setSelectedBgImage(null);
+    }
+  }, [selectedBgImageId, project.images]);
+
+  // Sync state for legacy projects or pure image overrides
+  useEffect(() => {
+      // If we don't have stored generator state, but we DO have a coverId (pure image), restore that state
+      if (!coverGeneratorState && project.coverId) {
+          setSelectedBgImageId(project.coverId);
+          setShowTextOnCover(false);
+          // Sync back to store
+          onUpdateGeneratorState?.({
+              selectedBgImageId: project.coverId,
+              showTextOnCover: false
+          });
+      }
+  }, []);
+
+  // Update handlers that also sync to parent state
+  const handleSetSelectedBgImageId = (id: string | null) => {
+      setSelectedBgImageId(id);
+      onUpdateGeneratorState?.({ selectedBgImageId: id });
+  };
+
+  const handleSetShowTextOnCover = (show: boolean) => {
+      setShowTextOnCover(show);
+      onUpdateGeneratorState?.({ showTextOnCover: show });
+  };
+  
+  const handleSetActiveTemplate = (idx: number) => {
+      setActiveTemplate(idx);
+      onUpdateGeneratorState?.({ activeTemplateIndex: idx });
+  };
+
+  const handleSetAiPrompt = (val: string) => {
+      setAiCoverPrompt(val);
+      onUpdateGeneratorState?.({ aiCoverPrompt: val });
+  };
+
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -175,16 +234,52 @@ const CoverGenerator: React.FC<CoverGeneratorProps> = ({ project, onUpdateCover,
       const reader = new FileReader();
       reader.onload = (event) => {
         if (event.target?.result) {
-          onUpdateCover(event.target.result as string);
-          setSelectedBgImage(null); // Uploading a full cover resets the background generator
+          const dataUrl = event.target.result as string;
+          
+          // Create an ImageAsset for this upload to enable referencing
+          const img = new Image();
+          img.onload = () => {
+             const asset: ImageAsset = {
+                id: Date.now().toString() + Math.random().toString(36).substr(2, 5),
+                name: file.name,
+                data: dataUrl,
+                type: file.type,
+                dimensions: `${img.naturalWidth} × ${img.naturalHeight}`,
+                size: file.size
+             };
+             
+             // 1. Add to library (so it becomes a reusable asset)
+             if (onAddImage) {
+                 onAddImage(asset);
+             }
+             
+             // 2. Set as cover (by reference ID)
+             onUpdateCover(dataUrl, asset.id);
+             
+             // 3. Update local and persistent state
+             setSelectedBgImage(dataUrl);
+             handleSetSelectedBgImageId(asset.id);
+          };
+          img.src = dataUrl;
         }
       };
       reader.readAsDataURL(file);
     }
   };
 
-  const handleSelectImageFromLibrary = (imageDataUrl: string) => {
-    setSelectedBgImage(imageDataUrl);
+  const handleSelectImageFromLibrary = (image: ImageAsset) => {
+    setSelectedBgImage(image.data);
+    handleSetSelectedBgImageId(image.id);
+    
+    // Auto-apply if in pure image mode
+    if (!showTextOnCover) {
+        onUpdateCover(image.data, image.id);
+    }
+  };
+  
+  const clearBackground = () => {
+    setSelectedBgImage(null);
+    handleSetSelectedBgImageId(null);
   };
 
   const generateCover = async () => {
@@ -198,7 +293,9 @@ const CoverGenerator: React.FC<CoverGeneratorProps> = ({ project, onUpdateCover,
             pixelRatio: 2
         });
         
-        onUpdateCover(dataUrl);
+        // When generating from HTML composition, it MUST be a new image (cover.png), so coverId is null.
+        // This is expected behavior for compositions.
+        onUpdateCover(dataUrl, null);
         setStatus('success');
         
         setTimeout(() => setStatus('idle'), 2000);
@@ -289,6 +386,10 @@ const CoverGenerator: React.FC<CoverGeneratorProps> = ({ project, onUpdateCover,
   ];
 
   const currentTemplate = templates[activeTemplate];
+  
+  // Logic to determine if we are in "Direct Image Mode" (Pure Image + Selected BG)
+  // In this mode, we check if user wants pure image AND has selected a background
+  const isDirectImageMode = !showTextOnCover && selectedBgImage;
 
   return (
     <div className="h-full flex flex-col md:flex-row p-4 md:p-6 gap-6 bg-[#F5F5F7] overflow-y-auto md:overflow-hidden relative">
@@ -319,13 +420,13 @@ const CoverGenerator: React.FC<CoverGeneratorProps> = ({ project, onUpdateCover,
               <h4 className="text-sm font-semibold text-gray-600 mb-3 flex items-center"><Library size={16} className="mr-2 text-green-500"/> 从素材库选择背景</h4>
               <div className="grid grid-cols-4 gap-2 max-h-40 overflow-y-auto bg-gray-50/50 p-2 rounded-lg border">
                  {project.images.map(img => (
-                    <button key={img.id} onClick={() => handleSelectImageFromLibrary(img.data)} className="aspect-square border-2 border-transparent hover:border-blue-500 rounded-md overflow-hidden p-0.5 focus:outline-none focus:ring-2 focus:ring-blue-400">
+                    <button key={img.id} onClick={() => handleSelectImageFromLibrary(img)} className={`aspect-square border-2 hover:border-blue-500 rounded-md overflow-hidden p-0.5 focus:outline-none focus:ring-2 focus:ring-blue-400 ${selectedBgImageId === img.id ? 'border-blue-600 ring-2 ring-blue-100' : 'border-transparent'}`}>
                        <img src={img.data} alt={img.name} className="w-full h-full object-cover rounded-sm" />
                     </button>
                  ))}
                  {project.images.length === 0 && <p className="col-span-4 text-xs text-center text-gray-400 py-4">素材库为空</p>}
               </div>
-              {selectedBgImage && <button onClick={() => setSelectedBgImage(null)} className="text-xs text-gray-500 hover:text-red-500 mt-2 flex items-center"><X size={12} className="mr-1"/>清除背景</button>}
+              {selectedBgImage && <button onClick={clearBackground} className="text-xs text-gray-500 hover:text-red-500 mt-2 flex items-center"><X size={12} className="mr-1"/>清除背景</button>}
           </div>
         </div>
 
@@ -338,13 +439,19 @@ const CoverGenerator: React.FC<CoverGeneratorProps> = ({ project, onUpdateCover,
                 <label className="block text-sm font-semibold text-gray-600 mb-3">封面模式</label>
                 <div className="flex items-center space-x-1 bg-gray-100 p-1 rounded-lg mb-4">
                     <button
-                        onClick={() => setShowTextOnCover(true)}
+                        onClick={() => handleSetShowTextOnCover(true)}
                         className={`w-full text-center px-4 py-1.5 rounded-md text-sm font-medium transition-colors ${showTextOnCover ? 'bg-white shadow-sm text-blue-600' : 'text-gray-500 hover:bg-gray-200/50'}`}
                     >
                         图文封面
                     </button>
                     <button
-                        onClick={() => setShowTextOnCover(false)}
+                        onClick={() => {
+                            handleSetShowTextOnCover(false);
+                            if (selectedBgImage) {
+                                // Direct reference mode
+                                onUpdateCover(selectedBgImage, selectedBgImageId);
+                            }
+                        }}
                         className={`w-full text-center px-4 py-1.5 rounded-md text-sm font-medium transition-colors ${!showTextOnCover ? 'bg-white shadow-sm text-blue-600' : 'text-gray-500 hover:bg-gray-200/50'}`}
                     >
                         纯图封面
@@ -369,14 +476,14 @@ const CoverGenerator: React.FC<CoverGeneratorProps> = ({ project, onUpdateCover,
               <label className="block text-sm font-semibold text-gray-600 mb-3">预设风格</label>
               <div className="grid grid-cols-2 gap-3">
                 {templates.map((t, idx) => (
-                  <button key={idx} onClick={() => setActiveTemplate(idx)} className={`h-12 w-full rounded-lg border-2 transition-all flex items-center justify-center text-xs font-medium ${ activeTemplate === idx ? 'border-blue-500 ring-2 ring-blue-100 shadow-md' : 'border-gray-200 hover:border-blue-300' }`}><span className={`w-3 h-3 rounded-full mr-2 border border-black/10 ${t.bg}`}></span>{t.name}</button>
+                  <button key={idx} onClick={() => handleSetActiveTemplate(idx)} className={`h-12 w-full rounded-lg border-2 transition-all flex items-center justify-center text-xs font-medium ${ activeTemplate === idx ? 'border-blue-500 ring-2 ring-blue-100 shadow-md' : 'border-gray-200 hover:border-blue-300' }`}><span className={`w-3 h-3 rounded-full mr-2 border border-black/10 ${t.bg}`}></span>{t.name}</button>
                 ))}
               </div>
             </div>
 
             <div className="bg-gradient-to-br from-blue-50 to-indigo-50 p-4 rounded-xl border border-blue-100 space-y-3">
                 <h4 className="text-sm font-semibold text-gray-600 flex items-center"><Sparkles size={16} className="mr-2 text-yellow-500"/> AI 封面设计</h4>
-                <textarea className="w-full h-20 bg-white/70 text-sm p-3 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none shadow-inner" placeholder="例如：黑暗奇幻风格，标题用破碎的哥特字体..." value={aiCoverPrompt} onChange={(e) => setAiCoverPrompt(e.target.value)} />
+                <textarea className="w-full h-20 bg-white/70 text-sm p-3 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none shadow-inner" placeholder="例如：黑暗奇幻风格，标题用破碎的哥特字体..." value={aiCoverPrompt} onChange={(e) => handleSetAiPrompt(e.target.value)} />
                 <button onClick={handleAiGenerateCoverCss} disabled={isAiGenerating || !aiCoverPrompt} className="w-full bg-blue-600 hover:bg-blue-700 text-white py-2.5 px-4 rounded-lg flex items-center justify-center transition-all shadow-md shadow-blue-500/20 active:scale-95 font-semibold text-xs disabled:bg-blue-300 disabled:cursor-not-allowed">
                     {isAiGenerating ? <Loader2 size={14} className="mr-2 animate-spin" /> : <Sparkles size={14} className="mr-2" />}
                     {isAiGenerating ? '生成中...' : '生成样式'}
@@ -503,7 +610,7 @@ const CoverGenerator: React.FC<CoverGeneratorProps> = ({ project, onUpdateCover,
                 )}
             </div>
 
-            <button onClick={generateCover} disabled={status !== 'idle'} className={`w-full py-3 rounded-xl flex items-center justify-center font-bold text-white transition-all duration-300 shadow-lg ${ status === 'success' ? 'bg-green-500 shadow-green-200' : status === 'generating' ? 'bg-blue-400 cursor-wait' : 'bg-blue-600 hover:bg-blue-700 shadow-blue-200 hover:scale-[1.02] active:scale-95' }`}>{status === 'generating' && <Loader2 size={18} className="mr-2 animate-spin" />}{status === 'success' && <Check size={18} className="mr-2" />}{status === 'idle' && <Camera size={18} className="mr-2" />}{status === 'generating' ? '正在渲染...' : status === 'success' ? '封面已更新!' : '生成并应用封面'}</button>
+            <button onClick={generateCover} disabled={status !== 'idle' || !!isDirectImageMode} className={`w-full py-3 rounded-xl flex items-center justify-center font-bold text-white transition-all duration-300 shadow-lg ${ status === 'success' ? 'bg-green-500 shadow-green-200' : status === 'generating' ? 'bg-blue-400 cursor-wait' : isDirectImageMode ? 'bg-gray-400 cursor-not-allowed shadow-none' : 'bg-blue-600 hover:bg-blue-700 shadow-blue-200 hover:scale-[1.02] active:scale-95' }`}>{status === 'generating' && <Loader2 size={18} className="mr-2 animate-spin" />}{status === 'success' && <Check size={18} className="mr-2" />}{status === 'idle' && <Camera size={18} className="mr-2" />}{status === 'generating' ? '正在渲染...' : status === 'success' ? '封面已更新!' : isDirectImageMode ? '已自动应用图片封面' : '生成并应用封面'}</button>
           </div>
         </div>
       </div>

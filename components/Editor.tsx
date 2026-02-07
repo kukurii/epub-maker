@@ -18,11 +18,9 @@ import {
   ChevronUp, 
   Type,
   Clock,
-  CheckCircle2,
   Scissors,
   Minus,
   Captions,
-  PowerOff,
   ArrowLeft,
   CaseSensitive,
   WholeWord
@@ -35,9 +33,6 @@ interface EditorProps {
   onSplitChapter: (beforeContent: string, afterContent: string) => void;
   project: ProjectData;
   scrollToId?: string | null;
-  saveStatus?: 'saved' | 'saving';
-  autoSaveEnabled: boolean;
-  onToggleAutoSave: () => void;
   onMobileBack?: () => void; // New prop for mobile back navigation
 }
 
@@ -93,9 +88,6 @@ const Editor: React.FC<EditorProps> = ({
     onSplitChapter, 
     project, 
     scrollToId, 
-    saveStatus = 'saved',
-    autoSaveEnabled,
-    onToggleAutoSave,
     onMobileBack
 }) => {
   const editorRef = useRef<HTMLDivElement>(null);
@@ -682,32 +674,6 @@ const Editor: React.FC<EditorProps> = ({
                 <Clock size={14} className="mr-2 text-gray-300"/> 
                 约 {stats.time} 分钟阅读
             </span>
-         </div>
-         <div className="flex items-center">
-            <button 
-                onClick={onToggleAutoSave}
-                className="focus:outline-none"
-                title={autoSaveEnabled ? "点击关闭自动保存" : "点击开启自动保存"}
-            >
-                {!autoSaveEnabled ? (
-                     <div className="flex items-center text-gray-500 bg-gray-100 px-2.5 py-1 rounded-full border border-gray-200 hover:bg-gray-200 transition-colors">
-                        <PowerOff size={12} className="mr-1.5" />
-                        <span className="hidden md:inline">自动保存已关</span>
-                        <span className="md:hidden">关</span>
-                    </div>
-                ) : saveStatus === 'saving' ? (
-                    <div className="flex items-center text-amber-500 bg-amber-50 px-2.5 py-1 rounded-full border border-amber-100 hover:bg-amber-100 transition-colors">
-                        <span className="w-1.5 h-1.5 bg-amber-500 rounded-full animate-pulse mr-2"></span>
-                        <span className="hidden md:inline">保存中...</span>
-                        <span className="md:hidden">...</span>
-                    </div>
-                ) : (
-                    <div className="flex items-center text-green-600 bg-green-50 px-2.5 py-1 rounded-full border border-green-100 hover:bg-green-100 transition-colors">
-                        <CheckCircle2 size={12} className="mr-1.5" />
-                        <span className="hidden md:inline">已保存</span>
-                    </div>
-                )}
-            </button>
          </div>
       </div>
 

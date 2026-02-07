@@ -68,17 +68,26 @@ export interface ExtraFile {
   isActive?: boolean;
 }
 
+export interface CoverGeneratorState {
+    selectedBgImageId: string | null;
+    activeTemplateIndex: number;
+    showTextOnCover: boolean;
+    aiCoverPrompt: string;
+}
+
 export interface ProjectData {
   metadata: Metadata;
   chapters: Chapter[];
   images: ImageAsset[];
   extraFiles: ExtraFile[];
   cover: string | null; // Base64 data url
+  coverId?: string | null; // ID of the image in 'images' array if cover is a reference
   coverCustomCSS?: string; // New: Custom CSS for cover generation
   coverDesign?: CoverDesign;
   activeStyleId: string;
   isPresetStyleActive?: boolean; // New: Flag to enable/disable preset styles
   customCSS: string;
+  coverGeneratorState?: CoverGeneratorState; // New: Persist the generator UI state
 }
 
 export type ViewMode = 'files' | 'chapters' | 'metadata' | 'styles' | 'images' | 'cover' | 'structure';

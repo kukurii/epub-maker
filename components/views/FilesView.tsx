@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Settings2, Library, BookUp, FileType, UploadCloud } from 'lucide-react';
+import { Settings2, Library, BookOpen, FileType, Cloud } from 'lucide-react';
 import { Chapter, ProjectData, ImageAsset, ExtraFile, Metadata } from '../../types';
 import { parseTxtToChapters, parseEpub } from '../../services/epubService';
 
@@ -162,16 +162,19 @@ const FilesView: React.FC<FilesViewProps> = ({ onProjectUpdate, onChaptersLoaded
   const handleTxtUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) processTxtFile(file);
+    e.target.value = ''; // Clear input to allow re-uploading the same file
   };
 
   const handleEpubUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
       const file = e.target.files?.[0];
       if (file) processEpubFile(file);
+      e.target.value = ''; // Clear input
   };
 
   const handleBatchEpubUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
       const files = e.target.files;
       if (files) processBatchFiles(files);
+      e.target.value = ''; // Clear input
   };
 
   // --- Drag & Drop Handlers ---
@@ -216,7 +219,7 @@ const FilesView: React.FC<FilesViewProps> = ({ onProjectUpdate, onChaptersLoaded
     <div className="p-4 md:p-10 flex flex-col items-center justify-center h-full bg-[#F5F5F7] overflow-y-auto">
       <div className="bg-white/80 backdrop-blur-md p-6 md:p-10 rounded-2xl md:rounded-[2.5rem] shadow-2xl border border-white/50 max-w-4xl w-full text-center transition-all">
         <div className="w-16 h-16 md:w-20 md:h-20 bg-blue-500/10 rounded-full flex items-center justify-center mx-auto mb-4 md:mb-6 text-blue-600">
-            <BookUp size={32} className="md:w-10 md:h-10" />
+            <BookOpen size={32} className="md:w-10 md:h-10" />
         </div>
         
         <h2 className="text-2xl md:text-3xl font-bold mb-2 md:mb-3 text-gray-900 tracking-tight">
@@ -242,7 +245,7 @@ const FilesView: React.FC<FilesViewProps> = ({ onProjectUpdate, onChaptersLoaded
                   dragActive === 'txt' ? 'bg-gray-800 border-gray-500' : 'bg-gray-900 hover:bg-black'
               } text-white`}>
                   {dragActive === 'txt' ? (
-                      <UploadCloud size={32} className="mb-4 text-white animate-bounce" />
+                      <Cloud size={32} className="mb-4 text-white animate-bounce" />
                   ) : (
                       <FileType size={32} className="mb-2 md:mb-4 text-gray-400 group-hover:text-white transition-colors" />
                   )}
@@ -266,9 +269,9 @@ const FilesView: React.FC<FilesViewProps> = ({ onProjectUpdate, onChaptersLoaded
                   dragActive === 'epub' ? 'bg-blue-500 border-white/30' : 'bg-blue-600 hover:bg-blue-700'
               } text-white`}>
                   {dragActive === 'epub' ? (
-                      <UploadCloud size={32} className="mb-4 text-white animate-bounce" />
+                      <Cloud size={32} className="mb-4 text-white animate-bounce" />
                   ) : (
-                      <BookUp size={32} className="mb-2 md:mb-4 text-blue-200 group-hover:text-white transition-colors" />
+                      <BookOpen size={32} className="mb-2 md:mb-4 text-blue-200 group-hover:text-white transition-colors" />
                   )}
                   <span className="font-bold text-base md:text-lg mb-1">{dragActive === 'epub' ? '释放以解析 EPUB' : '导入 EPUB'}</span>
                   <span className="text-[10px] opacity-60">解析现有电子书</span>
@@ -292,7 +295,7 @@ const FilesView: React.FC<FilesViewProps> = ({ onProjectUpdate, onChaptersLoaded
                     : 'bg-gradient-to-br from-indigo-600 to-purple-600 hover:shadow-indigo-500/30 shadow-2xl'
                 } text-white`}>
                     {dragActive === 'batch' ? (
-                      <UploadCloud size={32} className="mb-4 text-white animate-bounce" />
+                      <Cloud size={32} className="mb-4 text-white animate-bounce" />
                     ) : (
                       <Library size={32} className="mb-2 md:mb-4 text-indigo-200 group-hover:text-white transition-colors" />
                     )}

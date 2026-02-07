@@ -8,7 +8,7 @@ import {
   Image as ImageIcon, 
   Book,
   Download,
-  Trash,
+  RotateCcw,
   FolderOpen,
   X
 } from 'lucide-react';
@@ -34,7 +34,8 @@ const Sidebar: React.FC<SidebarProps> = ({ currentView, onViewChange, onExport, 
   ];
 
   const handleResetClick = () => {
-    if (window.confirm('确定要清空所有数据并重置项目吗？此操作无法撤销。')) {
+    // Confirmation is handled here to prevent accidental clicks
+    if (window.confirm('⚠️ 警告：确定要清空所有数据吗？\n\n此操作将删除所有章节、图片、样式和设置，且无法撤销。\n页面将会刷新以完成重置。')) {
         onReset();
         if (window.innerWidth < 768) onClose();
     }
@@ -100,18 +101,18 @@ const Sidebar: React.FC<SidebarProps> = ({ currentView, onViewChange, onExport, 
             type="button"
             onMouseDown={(e) => e.preventDefault()}
             onClick={() => { onExport(); if(window.innerWidth < 768) onClose(); }}
-            className="w-full bg-blue-600 hover:bg-blue-700 text-white py-3 px-4 rounded-xl flex items-center justify-center transition-all shadow-lg shadow-blue-500/20 active:scale-95 font-semibold text-sm"
+            className="w-full bg-blue-600 hover:bg-blue-700 text-white py-2.5 px-4 rounded-xl flex items-center justify-center transition-all shadow-lg shadow-blue-500/20 active:scale-95 font-semibold text-xs"
           >
-            <Download size={16} className="mr-2" />
+            <Download size={14} className="mr-2" />
             导出 EPUB
           </button>
           
           <button
               type="button"
               onClick={handleResetClick}
-              className="w-full text-gray-400 hover:text-red-500 hover:bg-red-50 py-2 px-4 rounded-lg flex items-center justify-center transition-colors text-xs font-medium"
+              className="w-full bg-transparent text-gray-400 hover:text-red-600 py-2 px-4 rounded-xl flex items-center justify-center transition-all text-[10px] font-medium"
           >
-              <Trash size={12} className="mr-1.5" />
+              <RotateCcw size={12} className="mr-1.5" />
               重置项目
           </button>
         </div>
