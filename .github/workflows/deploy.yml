@@ -4,9 +4,9 @@ concurrency:
   group: pages
   cancel-in-progress: false
 
-于:
+on:
   push:
-    分支:
+    branches:
       - main
 
 jobs:
