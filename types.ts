@@ -60,13 +60,14 @@ export interface CoverDesign {
     showSeries: boolean; // 新增：是否在封面上显示系列名
 }
 
-// Added isActive property to fix type error in components/views/StructureView.tsx
+// Added isActive and targetChapterIds property
 export interface ExtraFile {
   id: string;
   filename: string;
   content: string;
   type: 'css' | 'text' | 'xml'; 
   isActive?: boolean;
+  targetChapterIds?: string[]; // If undefined, applies globally (legacy). If array, applies only to listed IDs.
 }
 
 export interface CoverGeneratorState {
@@ -147,6 +148,7 @@ blockquote {
   padding-left: 1em;
   border-left: 3px solid #ccc;
   color: #666;
+  background-color: #fafafa;
 }
 ul, ol {
   margin: 1em 2em;
@@ -161,6 +163,14 @@ hr {
   background: #ccc;
   margin: 2em auto;
 }
+/* Inline Elements */
+strong, b { font-weight: bold; color: #000; }
+em, i { font-style: italic; }
+u { text-decoration: underline; text-underline-offset: 3px; }
+s, strike, del { text-decoration: line-through; color: #888; }
+a { color: #0056b3; text-decoration: none; border-bottom: 1px solid #0056b3; }
+a:hover { color: #003d80; border-bottom-color: #003d80; }
+
 /* TOC Specific Styles */
 .toc-list { list-style-type: none; padding: 0; margin: 1em 2em; }
 .toc-item { margin-bottom: 0.5em; }
@@ -246,6 +256,13 @@ hr:before {
   color: #8d6e63;
   font-size: 1.2em;
 }
+/* Inline Elements */
+strong, b { font-weight: bold; color: #3e2723; }
+em, i { font-style: italic; }
+u { text-decoration: underline; text-decoration-style: dashed; text-underline-offset: 4px; text-decoration-color: #8d6e63; }
+s, strike, del { text-decoration: line-through; color: #a1887f; }
+a { color: #5d4037; text-decoration: none; border-bottom: 1px solid #8d6e63; }
+
 /* TOC Specific Styles */
 .toc-list { list-style-type: none; padding: 0; margin: 2em 1em; }
 .toc-item { margin-bottom: 0.8em; }
@@ -324,6 +341,13 @@ hr {
   background: #eee;
   margin: 3em auto;
 }
+/* Inline Elements */
+strong, b { font-weight: 600; color: #000; }
+em, i { font-style: italic; color: #555; }
+u { text-decoration: underline; text-underline-offset: 3px; text-decoration-color: #999; }
+s, strike, del { text-decoration: line-through; color: #bbb; }
+a { color: #333; text-decoration: underline; text-decoration-thickness: 1px; text-underline-offset: 2px; }
+
 /* TOC Specific Styles */
 .toc-list { list-style-type: none; padding: 0; margin: 1em 0; }
 .toc-item { margin-bottom: 0.8em; border-bottom: 1px solid #eee; padding-bottom: 0.2em; }
@@ -404,6 +428,13 @@ hr {
   background-image: linear-gradient(to right, rgba(0, 0, 0, 0), rgba(52, 152, 219, 0.75), rgba(0, 0, 0, 0));
   margin: 2em auto;
 }
+/* Inline Elements */
+strong, b { font-weight: bold; color: #2c3e50; }
+em, i { font-style: italic; color: #3498db; }
+u { text-decoration: underline; text-decoration-color: #3498db; text-decoration-style: wavy; text-underline-offset: 3px; }
+s, strike, del { text-decoration: line-through; color: #95a5a6; }
+a { color: #3498db; text-decoration: none; border-bottom: 1px dashed #3498db; }
+
 /* TOC Specific Styles */
 .toc-list { list-style-type: none; padding: 0; margin: 1em 0; }
 .toc-item { margin-bottom: 0.6em; }
@@ -495,6 +526,13 @@ hr {
   margin: 2.5em auto;
   opacity: 0.5;
 }
+/* Inline Elements */
+strong, b { font-weight: bold; color: #be185d; }
+em, i { font-style: italic; color: #db2777; }
+u { text-decoration: underline; text-decoration-color: #f472b6; text-decoration-style: double; }
+s, strike, del { text-decoration: line-through; color: #cbd5e1; }
+a { color: #db2777; text-decoration: none; background: linear-gradient(to top, #fce7f3 50%, transparent 50%); }
+
 /* TOC Specific Styles */
 .toc-list { list-style-type: none; padding: 0; margin: 1em 0; }
 .toc-item { margin-bottom: 0.5em; }
@@ -579,6 +617,13 @@ hr {
   width: 50%;
   border-radius: 2px;
 }
+/* Inline Elements */
+strong, b { font-weight: bold; color: #78350f; }
+em, i { font-style: italic; color: #b45309; }
+u { text-decoration: underline; text-decoration-color: #fcd34d; text-decoration-thickness: 3px; text-underline-offset: 0; }
+s, strike, del { text-decoration: line-through; color: #d6d3d1; }
+a { color: #92400e; text-decoration: none; border-bottom: 2px solid #fcd34d; }
+
 /* TOC Specific Styles */
 .toc-list { list-style-type: none; padding: 0; margin: 2em 0; }
 .toc-item { margin-bottom: 0.8em; }

@@ -1,6 +1,6 @@
 import React from 'react';
 import { 
-  Heading1, Heading2, Bold, Italic, Quote, List, ListOrdered, 
+  Heading1, Heading2, Bold, Italic, Underline, Strikethrough, Link, Quote, List, ListOrdered, 
   Image as ImageIcon, AlignLeft, AlignJustify, RotateCcw, RotateCw, 
   Search, Scissors, Minus, Captions, ArrowLeft 
 } from 'lucide-react';
@@ -43,6 +43,28 @@ const EditorToolbar: React.FC<EditorToolbarProps> = ({
     onMobileBack, execCmd, toggleBlock, toggleBlockquote, toggleCaption, 
     handleSplit, setShowImageModal, showFindBar, setShowFindBar
 }) => {
+    
+    const handleInsertLink = () => {
+        // Save the current selection
+        const selection = window.getSelection();
+        let savedRange: Range | null = null;
+        if (selection && selection.rangeCount > 0) {
+            savedRange = selection.getRangeAt(0);
+        }
+
+        const url = window.prompt('请输入链接地址 (URL):', 'https://');
+        
+        // Restore selection
+        if (savedRange && selection) {
+            selection.removeAllRanges();
+            selection.addRange(savedRange);
+        }
+
+        if (url) {
+            execCmd('createLink', url);
+        }
+    };
+
     return (
         <div className="flex-none h-14 bg-white border-b border-gray-200 px-2 md:px-6 flex items-center justify-between z-20 shadow-[0_2px_10px_rgba(0,0,0,0.02)]">
             <div className="flex items-center flex-1 overflow-x-auto no-scrollbar mask-gradient-right">
@@ -78,8 +100,11 @@ const EditorToolbar: React.FC<EditorToolbarProps> = ({
 
                 {/* Formatting */}
                 <div className="flex items-center space-x-1 mx-2 flex-shrink-0">
-                    <ToolbarButton icon={<Bold size={16} />} onClick={() => execCmd('bold')} />
-                    <ToolbarButton icon={<Italic size={16} />} onClick={() => execCmd('italic')} />
+                    <ToolbarButton icon={<Bold size={16} />} onClick={() => execCmd('bold')} title="加粗" />
+                    <ToolbarButton icon={<Italic size={16} />} onClick={() => execCmd('italic')} title="斜体" />
+                    <ToolbarButton icon={<Underline size={16} />} onClick={() => execCmd('underline')} title="下划线" />
+                    <ToolbarButton icon={<Strikethrough size={16} />} onClick={() => execCmd('strikeThrough')} title="删除线" />
+                    <ToolbarButton icon={<Link size={16} />} onClick={handleInsertLink} title="插入链接" />
                     <ToolbarButton icon={<Quote size={16} />} onClick={toggleBlockquote} title="引用" />
                     <ToolbarButton icon={<Captions size={16} />} onClick={toggleCaption} title="图片说明 (图注)" />
                 </div>

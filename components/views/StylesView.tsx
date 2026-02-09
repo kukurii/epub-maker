@@ -278,7 +278,21 @@ const StylesView: React.FC<StylesViewProps> = ({ project, activeChapter, onUpdat
   const activeStyle = PRESET_STYLES.find(s => s.id === project.activeStyleId);
 
   if (stylePreviewMode === 'chapter') {
-      previewContent = activeChapter ? activeChapter.content : '<h1>示例章节</h1><p>这是一个预览段落。请选择一个章节以查看实际效果。</p><p>这是第二段，用于展示段落间距或缩进效果。</p><blockquote>这是一个引用块的示例文字。</blockquote><hr/><p>下方是图片示例：</p><div style="background:#eee;height:100px;display:flex;align-items:center;justify-content:center;color:#999;border:1px dashed #ccc;margin:1em 0;">[图片占位]</div><p class="caption">图1.1 示例图片说明</p>';
+      previewContent = activeChapter ? activeChapter.content : `
+        <h1>示例章节标题</h1>
+        <p>这是一个预览段落。请选择一个章节以查看实际效果，或者在此查看默认样式的表现。</p>
+        <p>这是第二段，用于展示段落间距或缩进效果。这里包含 <strong>加粗(Bold)</strong>、<em>斜体(Italic)</em>、<u>下划线</u> 和 <s>删除线</s>。</p>
+        <p>这是一个 <a href="#">超链接样式示例</a>。</p>
+        <blockquote>“这是一个引用块的示例文字。通常用于摘录或强调。”</blockquote>
+        <hr/>
+        <p>下方是图片示例：</p>
+        <div style="background:#eee;height:120px;display:flex;align-items:center;justify-content:center;color:#999;border:1px dashed #ccc;margin:1em 0;border-radius:4px;">[图片占位]</div>
+        <p class="caption">图1.1 示例图片说明</p>
+        <ul>
+            <li>列表项目 A</li>
+            <li>列表项目 B</li>
+        </ul>
+      `;
   } else {
       const tocItems = project.chapters.map((c, index) => {
            const levelClass = c.level === 2 ? 'toc-level-2' : 'toc-level-1';

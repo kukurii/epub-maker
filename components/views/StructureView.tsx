@@ -1,4 +1,4 @@
-import React, { useMemo, useState, useEffect, useCallback } from 'react';
+import React, { useMemo, useState, useEffect, useCallback, useRef } from 'react';
 import { ProjectData, ExtraFile, PRESET_STYLES } from '../../types';
 import saveAs from 'file-saver';
 import { FileNode } from '../structure/types';
@@ -20,7 +20,7 @@ const filterTree = (nodes: FileNode[], term: string): FileNode[] => {
       const filteredChildren = filterTree(node.children, term);
       // If folder matches or has matching children, keep it
       if (node.name.toLowerCase().includes(lowerTerm) || filteredChildren.length > 0) {
-        return { ...node, children: filteredChildren, isOpen: true }; // Force open if searching
+        return { ...node, children: filteredChildren }; 
       }
       return null;
     }
@@ -29,12 +29,28 @@ const filterTree = (nodes: FileNode[], term: string): FileNode[] => {
   }).filter(Boolean) as FileNode[];
 };
 
+const RESERVED_FILENAMES = [
+    'mimetype', 
+    'container.xml', 
+    'content.opf', 
+    'toc.ncx', 
+    'toc.xhtml', 
+    'style.css', 
+    'cover.xhtml',
+    'images',
+    'META-INF',
+    'OEBPS'
+];
+
 const StructureView: React.FC<StructureViewProps> = ({ project, onUpdateProject }) => {
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [editorContent, setEditorContent] = useState('');
   const [isDirty, setIsDirty] = useState(false);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
+  
+  // Persist expanded folders state
+  const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set(['root', 'oebps', 'meta-inf', 'images-folder']));
 
   // Helper to calculate byte size
   const getByteSize = (str: string) => new Blob([str]).size;
@@ -76,12 +92,9 @@ const StructureView: React.FC<StructureViewProps> = ({ project, onUpdateProject 
     });
 
     if (project.cover) {
-       // Check if this is a reference to an existing image
        const isReferenced = !!project.coverId && project.images.some(i => i.id === project.coverId);
        const size = getImageByteSize(project.cover);
        
-       // Only count size and show separate cover node if NOT referenced
-       // If referenced, the size is already counted in the 'images' array above, and the file lives in images/
        if (!isReferenced) {
            total += size;
            images.unshift({
@@ -123,11 +136,11 @@ const StructureView: React.FC<StructureViewProps> = ({ project, onUpdateProject 
             isEditable: true,
             isActive: f.isActive !== false,
             canRename: true,
-            canDelete: true
+            canDelete: true,
+            targetChapterIds: f.targetChapterIds
         };
     });
     
-    // Virtual Files
     const coverHtmlSize = 500; 
     if (project.cover) {
         total += coverHtmlSize;
@@ -137,7 +150,6 @@ const StructureView: React.FC<StructureViewProps> = ({ project, onUpdateProject 
     total += tocHtmlSize;
     chapters.unshift({ id: 'toc-html', name: 'toc.xhtml', type: 'file', fileType: 'xhtml', sizeBytes: tocHtmlSize, isEditable: false });
 
-    // OEBPS Folder Children
     const opfSize = 2000; 
     const ncxSize = 1000;
     const cssSize = getByteSize(mergedMainCss);
@@ -214,10 +226,56 @@ const StructureView: React.FC<StructureViewProps> = ({ project, onUpdateProject 
   const selectedNode = selectedNodeId ? findNode(selectedNodeId, structure.children || []) : null;
   const breadcrumbs = selectedNodeId ? findPath(selectedNodeId, structure.children || []) : null;
 
-  // Filter the tree for display
   const displayedNodes = useMemo(() => filterTree(structure.children || [], searchTerm), [structure, searchTerm]);
 
-  // Load content
+  // Content Saving Logic (extracted to reuse)
+  const saveContent = (id: string, content: string) => {
+      if (id === 'style-css') {
+          if (content.includes(CUSTOM_CSS_MARKER)) {
+              const customPart = content.split(CUSTOM_CSS_MARKER)[1].trim();
+              onUpdateProject({ customCSS: customPart });
+          } else {
+              onUpdateProject({ customCSS: content });
+          }
+      } else if (id.startsWith('chapter-')) {
+          const chapterIndex = parseInt(id.split('-')[1]);
+          const newChapters = [...project.chapters];
+          if (newChapters[chapterIndex]) {
+              newChapters[chapterIndex] = { ...newChapters[chapterIndex], content: content };
+              onUpdateProject({ chapters: newChapters });
+          }
+      } else if (id.startsWith('extra-')) {
+          const extraId = id.replace('extra-', '');
+          const newExtras = project.extraFiles ? project.extraFiles.map(f => f.id === extraId ? { ...f, content: content } : f) : [];
+          onUpdateProject({ extraFiles: newExtras });
+      }
+  };
+
+  const handleSave = () => {
+      if (!selectedNodeId) return;
+      saveContent(selectedNodeId, editorContent);
+      setIsDirty(false);
+  };
+  
+  const handleUpdateFileMeta = (id: string, updates: Partial<ExtraFile>) => {
+      if (id.startsWith('extra-')) {
+          const extraId = id.replace('extra-', '');
+          const newExtras = project.extraFiles ? project.extraFiles.map(f => f.id === extraId ? { ...f, ...updates } : f) : [];
+          onUpdateProject({ extraFiles: newExtras });
+      }
+  };
+
+  // Safe Node Selection (Auto-save previous)
+  const handleSelectNode = (id: string | null) => {
+      if (selectedNodeId && isDirty) {
+          // Auto-save the current file before switching
+          saveContent(selectedNodeId, editorContent);
+          setIsDirty(false);
+      }
+      setSelectedNodeId(id);
+  };
+
+  // Load content when selectedNodeId changes
   useEffect(() => {
       if (selectedNodeId) {
           let content = '';
@@ -260,31 +318,6 @@ const StructureView: React.FC<StructureViewProps> = ({ project, onUpdateProject 
       }
   }, [selectedNodeId, project.chapters, project.extraFiles, project.cover, project.images, mergedMainCss, selectedNode]); 
 
-  const handleSave = () => {
-      if (!selectedNodeId) return;
-
-      if (selectedNodeId === 'style-css') {
-          if (editorContent.includes(CUSTOM_CSS_MARKER)) {
-              const customPart = editorContent.split(CUSTOM_CSS_MARKER)[1].trim();
-              onUpdateProject({ customCSS: customPart });
-          } else {
-              onUpdateProject({ customCSS: editorContent });
-          }
-      } else if (selectedNodeId.startsWith('chapter-')) {
-          const chapterIndex = parseInt(selectedNodeId.split('-')[1]);
-          const newChapters = [...project.chapters];
-          if (newChapters[chapterIndex]) {
-              newChapters[chapterIndex] = { ...newChapters[chapterIndex], content: editorContent };
-              onUpdateProject({ chapters: newChapters });
-          }
-      } else if (selectedNodeId.startsWith('extra-')) {
-          const extraId = selectedNodeId.replace('extra-', '');
-          const newExtras = project.extraFiles ? project.extraFiles.map(f => f.id === extraId ? { ...f, content: editorContent } : f) : [];
-          onUpdateProject({ extraFiles: newExtras });
-      }
-      setIsDirty(false);
-  };
-
   const toggleFileActive = () => {
       if (selectedNodeId && selectedNodeId.startsWith('extra-')) {
           const extraId = selectedNodeId.replace('extra-', '');
@@ -294,65 +327,96 @@ const StructureView: React.FC<StructureViewProps> = ({ project, onUpdateProject 
   };
 
   const handleAddFile = () => {
-      const name = prompt("输入新文件名称 (例如: theme-dark.css)", "custom.css");
-      if (!name) return;
+      // Find highest suffix for style_XXX.css
+      const cssFiles = project.extraFiles?.filter(f => f.type === 'css' && f.filename.startsWith('style_')) || [];
+      let maxNum = 0;
+      cssFiles.forEach(f => {
+          const match = f.filename.match(/style_(\d+)\.css/);
+          if (match) {
+              const num = parseInt(match[1], 10);
+              if (num > maxNum) maxNum = num;
+          }
+      });
+      const newName = `style_${String(maxNum + 1).padStart(3, '0')}.css`;
       
-      const cleanName = name.trim();
-      if (project.extraFiles?.some(f => f.filename === cleanName)) {
-          alert('文件名已存在');
-          return;
-      }
-
-      const type = cleanName.endsWith('.css') ? 'css' : 'xml';
       const newFile: ExtraFile = {
           id: Date.now().toString(),
-          filename: cleanName,
-          content: type === 'css' ? '/* New File */\n' : '<?xml version="1.0"?>\n',
-          type,
-          isActive: true
+          filename: newName,
+          content: `/* ${newName} */\n`,
+          type: 'css',
+          isActive: true,
+          targetChapterIds: [] // Default empty (manual opt-in)
       };
       
       onUpdateProject({ extraFiles: [...(project.extraFiles || []), newFile] });
-      setTimeout(() => setSelectedNodeId(`extra-${newFile.id}`), 100);
+      setExpandedIds(prev => new Set(prev).add('oebps'));
+      setTimeout(() => setSelectedNodeId(`extra-${newFile.id}`), 150);
   };
 
-  const handleDeleteFile = () => {
-      if (!selectedNodeId || !selectedNode?.canDelete) return;
+  const handleDeleteFile = (id?: string) => {
+      const targetId = id || selectedNodeId;
+      if (!targetId) return;
+      
+      // Find name for confirmation
+      const targetNode = findNode(targetId, structure.children || []);
+      const displayName = targetNode ? targetNode.name : '此文件';
 
-      if (confirm(`确定要删除 ${selectedNode.name} 吗?`)) {
-          if (selectedNodeId.startsWith('extra-')) {
-              const extraId = selectedNodeId.replace('extra-', '');
-              onUpdateProject({ extraFiles: project.extraFiles?.filter(f => f.id !== extraId) || [] });
-          } else if (selectedNodeId.startsWith('img-')) {
-              const imgId = selectedNodeId.replace('img-', '');
-              onUpdateProject({ images: project.images?.filter(i => i.id !== imgId) || [] });
+      if (window.confirm(`确定要删除 ${displayName} 吗?`)) {
+          if (targetId.startsWith('extra-')) {
+              const extraId = targetId.replace('extra-', '');
+              const newExtras = (project.extraFiles || []).filter(f => f.id !== extraId);
+              onUpdateProject({ extraFiles: newExtras });
+          } else if (targetId.startsWith('img-')) {
+              const imgId = targetId.replace('img-', '');
+              const newImages = (project.images || []).filter(i => i.id !== imgId);
+              onUpdateProject({ images: newImages });
           }
-          setSelectedNodeId(null);
+          
+          // Only clear selection if we deleted the currently selected node
+          if (targetId === selectedNodeId) {
+              setSelectedNodeId(null);
+          }
       }
   };
 
-  const handleRenameFile = () => {
-      if (!selectedNodeId || !selectedNode?.canRename) return;
-      const newName = prompt("重命名文件:", selectedNode.name);
-      if (newName && newName !== selectedNode.name) {
-          if (selectedNodeId.startsWith('extra-')) {
-              const extraId = selectedNodeId.replace('extra-', '');
+  const handleRenameFile = (node?: FileNode) => {
+      const targetNode = node || selectedNode;
+      if (!targetNode || !targetNode.canRename) return;
+      
+      const newName = prompt("重命名文件:", targetNode.name);
+      
+      if (newName && newName !== targetNode.name) {
+          const cleanName = newName.trim();
+          
+          if (RESERVED_FILENAMES.includes(cleanName) || RESERVED_FILENAMES.some(r => cleanName.toLowerCase() === r.toLowerCase())) {
+              alert('无法重命名：目标文件名是系统保留文件。');
+              return;
+          }
+
+          if (project.extraFiles?.some(f => f.filename === cleanName)) {
+              alert('文件名已存在');
+              return;
+          }
+
+          if (targetNode.id.startsWith('extra-')) {
+              const extraId = targetNode.id.replace('extra-', '');
               onUpdateProject({ 
-                  extraFiles: project.extraFiles?.map(f => f.id === extraId ? { ...f, filename: newName } : f) || [] 
+                  extraFiles: project.extraFiles?.map(f => f.id === extraId ? { ...f, filename: cleanName } : f) || [] 
               });
           }
       }
+  };
+  
+  const handleDeleteNode = (node: FileNode) => {
+      handleDeleteFile(node.id);
   };
 
   const handleDownloadFile = () => {
       if (!selectedNode) return;
       
       if (selectedNode.dataUrl) {
-          // Download image
           saveAs(selectedNode.dataUrl, selectedNode.name);
       } else {
-          // Download text content
-          // If it's dirty in editor, download editor content, else download source
           const contentToDownload = isDirty ? editorContent : (
              selectedNodeId === 'style-css' ? mergedMainCss : 
              selectedNodeId?.startsWith('chapter-') ? project.chapters[parseInt(selectedNodeId.split('-')[1])].content :
@@ -366,16 +430,29 @@ const StructureView: React.FC<StructureViewProps> = ({ project, onUpdateProject 
       }
   };
 
+  const toggleNode = (id: string) => {
+      setExpandedIds(prev => {
+          const next = new Set(prev);
+          if (next.has(id)) next.delete(id);
+          else next.add(id);
+          return next;
+      });
+  };
+
   return (
     <div className="flex h-full bg-[#F5F5F7] overflow-hidden">
       <FileTree 
           displayedNodes={displayedNodes}
           selectedNodeId={selectedNodeId}
-          setSelectedNodeId={setSelectedNodeId}
+          setSelectedNodeId={handleSelectNode}
           searchTerm={searchTerm}
           setSearchTerm={setSearchTerm}
           totalSize={totalSize}
           onAddFile={handleAddFile}
+          expandedIds={expandedIds}
+          onToggleNode={toggleNode}
+          onDelete={handleDeleteNode}
+          onRename={handleRenameFile}
       />
 
       <FileContentArea 
@@ -389,9 +466,11 @@ const StructureView: React.FC<StructureViewProps> = ({ project, onUpdateProject 
           previewUrl={previewUrl}
           onSave={handleSave}
           onDelete={handleDeleteFile}
-          onRename={handleRenameFile}
+          onRename={() => handleRenameFile()}
           onDownload={handleDownloadFile}
           onToggleActive={toggleFileActive}
+          chapters={project.chapters}
+          onUpdateFile={handleUpdateFileMeta}
       />
     </div>
   );

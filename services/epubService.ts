@@ -46,15 +46,11 @@ export const generateEpub = async (project: ProjectData) => {
   oebps.file('style.css', finalCss);
 
   // --- Extra Files (Custom CSS created in Structure View) ---
-  const extraCssLinks: string[] = [];
   if (project.extraFiles) {
       project.extraFiles.forEach(file => {
           // Only include active extra files in the final EPUB
           if (file.isActive === false) return;
           oebps.file(file.filename, file.content);
-          if (file.type === 'css') {
-              extraCssLinks.push(`<link rel="stylesheet" type="text/css" href="${file.filename}"/>`);
-          }
       });
   }
 
@@ -104,13 +100,14 @@ export const generateEpub = async (project: ProjectData) => {
 
   // Write cover.xhtml if there is a cover
   if (coverFilename) {
+    // Cover usually doesn't need extra chapter-specific styles, but let's include 'global' ones just in case?
+    // For now, only style.css
     const coverXhtml = `<?xml version="1.0" encoding="utf-8"?>
 <!DOCTYPE html>
 <html xmlns="http://www.w3.org/1999/xhtml">
 <head>
   <title>Cover</title>
   <link rel="stylesheet" type="text/css" href="style.css"/>
-  ${extraCssLinks.join('\n  ')}
 </head>
 <body class="cover-page">
   <div class="cover-container">
@@ -150,13 +147,25 @@ export const generateEpub = async (project: ProjectData) => {
   project.chapters.forEach((chapter, index) => {
     const processedContent = processContent(chapter.content);
     
+    // Calculate which extra files apply to this chapter
+    const extraCssLinks = project.extraFiles
+        ?.filter(f => {
+            if (f.type !== 'css' || f.isActive === false) return false;
+            // If targetChapterIds is undefined, treat as global (legacy compat)
+            if (f.targetChapterIds === undefined) return true;
+            // Otherwise check if this chapter is in the target list
+            return f.targetChapterIds.includes(chapter.id);
+        })
+        .map(f => `<link rel="stylesheet" type="text/css" href="${f.filename}"/>`)
+        .join('\n  ') || '';
+
     const chapterContent = `<?xml version="1.0" encoding="utf-8"?>
 <!DOCTYPE html>
 <html xmlns="http://www.w3.org/1999/xhtml">
 <head>
   <title>${chapter.title}</title>
   <link rel="stylesheet" type="text/css" href="style.css"/>
-  ${extraCssLinks.join('\n  ')}
+  ${extraCssLinks}
 </head>
 <body>
   ${processedContent}
@@ -181,7 +190,6 @@ export const generateEpub = async (project: ProjectData) => {
 <head>
   <title>Table of Contents</title>
   <link rel="stylesheet" type="text/css" href="style.css"/>
-  ${extraCssLinks.join('\n  ')}
 </head>
 <body>
   <h1>目录</h1>

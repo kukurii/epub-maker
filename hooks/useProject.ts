@@ -66,7 +66,7 @@ export const useProject = () => {
                     ...getInitialState(), 
                     ...parsed,
                     coverDesign: parsed.coverDesign || { ...INITIAL_COVER_DESIGN },
-                    extraFiles: parsed.extraFiles || [],
+                    extraFiles: parsed.extraFiles || [], // Ensure this is always an array
                     isPresetStyleActive: parsed.isPresetStyleActive !== undefined ? parsed.isPresetStyleActive : true,
                     coverGeneratorState: parsed.coverGeneratorState || {
                         selectedBgImageId: null,

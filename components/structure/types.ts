@@ -10,4 +10,5 @@ export interface FileNode {
   canRename?: boolean;
   canDelete?: boolean;
   dataUrl?: string; 
+  targetChapterIds?: string[];
 }

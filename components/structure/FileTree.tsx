@@ -1,5 +1,5 @@
 import React from 'react';
-import { Database, FilePlus, Search, X } from 'lucide-react';
+import { Database, FilePlus2, Search, X } from 'lucide-react';
 import { FileNode } from './types';
 import FileTreeItem from './FileTreeItem';
 
@@ -21,11 +21,16 @@ interface FileTreeProps {
     setSearchTerm: (term: string) => void;
     totalSize: number;
     onAddFile: () => void;
+    expandedIds: Set<string>;
+    onToggleNode: (id: string) => void;
+    onDelete: (node: FileNode) => void;
+    onRename: (node: FileNode) => void;
 }
 
 const FileTree: React.FC<FileTreeProps> = ({ 
     displayedNodes, selectedNodeId, setSelectedNodeId, 
-    searchTerm, setSearchTerm, totalSize, onAddFile 
+    searchTerm, setSearchTerm, totalSize, onAddFile,
+    expandedIds, onToggleNode, onDelete, onRename
 }) => {
     return (
       <div className="w-80 bg-white border-r border-gray-200 flex flex-col flex-shrink-0 z-10 shadow-[4px_0_24px_rgba(0,0,0,0.02)]">
@@ -35,8 +40,8 @@ const FileTree: React.FC<FileTreeProps> = ({
                       <Database size={16} className="mr-2 text-blue-600"/> 
                       资源管理器
                   </h2>
-                  <button onClick={onAddFile} className="p-1.5 bg-blue-50 text-blue-600 rounded-md hover:bg-blue-100 transition-colors" title="新建文件">
-                      <FilePlus size={16} />
+                  <button onClick={onAddFile} className="flex items-center gap-1.5 px-2 py-1 bg-blue-50 text-blue-600 rounded-md hover:bg-blue-100 transition-colors text-xs font-medium" title="新建 CSS 文件">
+                      <FilePlus2 size={14} /> 新建 CSS
                   </button>
               </div>
               <div className="relative">
@@ -65,6 +70,10 @@ const FileTree: React.FC<FileTreeProps> = ({
                         selectedId={selectedNodeId} 
                         onSelect={(n) => setSelectedNodeId(n.id)} 
                         searchTerm={searchTerm}
+                        expandedIds={expandedIds}
+                        onToggleNode={onToggleNode}
+                        onDelete={onDelete}
+                        onRename={onRename}
                     />
                  ))
              ) : (
