@@ -1,8 +1,12 @@
 name: Deploy to GitHub Pages
 
-on:
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+于:
   push:
-    branches:
+    分支:
       - main
 
 jobs:
