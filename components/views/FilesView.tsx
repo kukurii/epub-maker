@@ -78,7 +78,7 @@ const FilesView: React.FC<FilesViewProps> = ({ onProjectUpdate, onChaptersLoaded
       // Delay slightly to ensure UI renders the loading state
       await new Promise(resolve => setTimeout(resolve, 50));
       try {
-          const importedProject = await parseEpub(file);
+          const importedProject = await parseEpub(file, { imageStartId: 1 });
           onProjectUpdate(importedProject);
           
           if (importedProject.chapters && importedProject.chapters.length > 0) {
@@ -108,6 +108,7 @@ const FilesView: React.FC<FilesViewProps> = ({ onProjectUpdate, onChaptersLoaded
           let mergedCustomCSS = '';
           let firstMetadata: Metadata | null = null;
           let firstCover: string | null = null;
+          let globalImageCount = 0;
 
           const fileList = epubFiles.sort((a, b) => a.name.localeCompare(b.name, 'zh'));
 
@@ -117,10 +118,13 @@ const FilesView: React.FC<FilesViewProps> = ({ onProjectUpdate, onChaptersLoaded
               await new Promise(resolve => setTimeout(resolve, 10));
               
               const file = fileList[i];
-              const result = await parseEpub(file);
+              const result = await parseEpub(file, { imageStartId: globalImageCount + 1 });
 
               if (result.chapters) mergedChapters = [...mergedChapters, ...result.chapters];
-              if (result.images) mergedImages = [...mergedImages, ...result.images];
+              if (result.images) {
+                  mergedImages = [...mergedImages, ...result.images];
+                  globalImageCount += result.images.length;
+              }
               if (result.extraFiles) mergedExtraFiles = [...mergedExtraFiles, ...result.extraFiles];
               if (result.customCSS) mergedCustomCSS += `\n/* From ${file.name} */\n` + result.customCSS;
               

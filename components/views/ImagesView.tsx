@@ -17,7 +17,7 @@ const formatBytes = (bytes: number, decimals = 2) => {
   return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
 };
 
-const getImageDetails = (file: File): Promise<ImageAsset> => {
+const getImageDetails = (file: File): Promise<Omit<ImageAsset, 'id'>> => {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = (event) => {
@@ -25,7 +25,6 @@ const getImageDetails = (file: File): Promise<ImageAsset> => {
       const img = new Image();
       img.onload = () => {
         resolve({
-          id: Date.now().toString() + Math.random().toString(36).substr(2, 5),
           name: file.name,
           data: dataUrl,
           type: file.type,
@@ -82,7 +81,19 @@ const ImagesView: React.FC<ImagesViewProps> = ({ images, onUpdateImages }) => {
       const tempIds = imageFiles.map(f => f.name + f.lastModified);
       setLoadingFiles(prev => [...prev, ...tempIds]);
 
-      const newAssets = await Promise.all(imageFiles.map(getImageDetails));
+      const rawAssets = await Promise.all(imageFiles.map(getImageDetails));
+
+      // Calculate max ID
+      let maxId = 0;
+      images.forEach(img => {
+          const n = parseInt(img.id, 10);
+          if (!isNaN(n) && n > maxId) maxId = n;
+      });
+
+      const newAssets = rawAssets.map((asset, index) => ({
+          ...asset,
+          id: (maxId + 1 + index).toString().padStart(3, '0')
+      }));
       
       onUpdateImages([...images, ...newAssets]);
       setLoadingFiles(prev => prev.filter(id => !tempIds.includes(id)));

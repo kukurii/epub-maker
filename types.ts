@@ -12,6 +12,7 @@ export interface Chapter {
   content: string; // HTML content
   level: 1 | 2; // Kept for legacy compatibility, but mostly derived now
   subItems?: TocItem[]; // Derived H2s for directory display
+  excludeFromToc?: boolean; // If true, this chapter will not appear in TOC files (toc.xhtml, toc.ncx)
 }
 
 export interface Metadata {

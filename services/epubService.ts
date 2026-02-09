@@ -1,6 +1,6 @@
 import JSZip from 'jszip';
 import saveAs from 'file-saver';
-import { ProjectData, PRESET_STYLES, Chapter, Metadata, ImageAsset, ExtraFile } from '../types';
+import { ProjectData, PRESET_STYLES, Chapter, Metadata, ImageAsset, ExtraFile, TocItem } from '../types';
 
 // Helper to ensure HTML is valid XHTML for EPUB (self-closing tags, entities)
 const fixXHTML = (html: string): string => {
@@ -168,6 +168,9 @@ export const generateEpub = async (project: ProjectData) => {
   // --- TOC.xhtml (Visual Table of Contents) ---
   let tocHtmlItems = '';
   project.chapters.forEach((chapter, index) => {
+      // Exclude from TOC if marked
+      if (chapter.excludeFromToc) return;
+
       const indentClass = chapter.level === 2 ? 'toc-level-2' : 'toc-level-1';
       tocHtmlItems += `<li class="toc-item ${indentClass}"><a class="toc-link" href="chapter_${index}.xhtml">${chapter.title}</a></li>\n`;
   });
@@ -302,6 +305,9 @@ export const generateEpub = async (project: ProjectData) => {
   let currentLevel = 0; 
 
   project.chapters.forEach((c, i) => {
+    // Exclude from NCX (TOC) if marked
+    if (c.excludeFromToc) return;
+
     if (c.level === 1) {
        if (currentLevel === 2) {
           navPoints += `</navPoint>\n`; 
@@ -425,7 +431,7 @@ const normalizePath = (path: string) => {
     return result.join('/');
 };
 
-export const parseEpub = async (file: File): Promise<Partial<ProjectData>> => {
+export const parseEpub = async (file: File, options?: { imageStartId?: number }): Promise<Partial<ProjectData>> => {
     const zip = await JSZip.loadAsync(file);
     const parser = new DOMParser();
 
@@ -463,6 +469,9 @@ export const parseEpub = async (file: File): Promise<Partial<ProjectData>> => {
     const newExtraFiles: ExtraFile[] = [];
     let importedCustomCSS = '';
 
+    // ID Counter for images
+    let currentImageId = options?.imageStartId || 1;
+
     const manifestPromises = Array.from(manifestItems).map(async (item) => {
         const id = item.getAttribute('id') || 'unknown';
         const href = decodeURIComponent(item.getAttribute('href') || '');
@@ -474,9 +483,12 @@ export const parseEpub = async (file: File): Promise<Partial<ProjectData>> => {
             if (mediaType.startsWith('image/')) {
                 const imageFile = zip.file(zipPath);
                 if (imageFile) {
+                    // Pre-assign ID to ensure sequence
+                    const assetId = (currentImageId++).toString().padStart(3, '0');
+
                     const data = await imageFile.async('base64');
                     const dataUrl = `data:${mediaType};base64,${data}`;
-                    const assetId = Date.now().toString(36) + Math.random().toString(36).substr(2, 6);
+                    
                     const base64 = dataUrl.split(',')[1] || '';
                     const size = Math.floor((base64.length * 3) / 4) - ((base64.match(/=/g) || []).length);
                     const asset: ImageAsset = {
@@ -551,14 +563,40 @@ export const parseEpub = async (file: File): Promise<Partial<ProjectData>> => {
                     }
                 });
 
-                const title = chapterDoc.querySelector('h1, h2, title')?.textContent?.trim() || `Chapter ${chapterIndex + 1}`;
+                // Identify Title and SubItems, and ensure IDs
+                const headings = chapterDoc.querySelectorAll('h1, h2');
+                let foundTitle = false;
+                let chapterTitle = `Chapter ${chapterIndex + 1}`;
+                const subItems: TocItem[] = [];
+
+                headings.forEach(el => {
+                    if (!el.id) el.id = 'heading-' + Math.random().toString(36).substr(2, 9);
+                    const text = el.textContent?.trim() || 'Untitled';
+                    
+                    if (el.tagName === 'H1') {
+                         if (!foundTitle) {
+                             chapterTitle = text;
+                             foundTitle = true;
+                         } else {
+                             subItems.push({ id: el.id, text, level: 1 });
+                         }
+                    } else if (el.tagName === 'H2') {
+                         subItems.push({ id: el.id, text, level: 2 });
+                    }
+                });
                 
+                // If no H1 found, maybe use title tag or fallback
+                if (!foundTitle) {
+                     const titleTag = chapterDoc.querySelector('title');
+                     if (titleTag && titleTag.textContent) chapterTitle = titleTag.textContent.trim();
+                }
+
                 return {
                     id: Date.now().toString(36) + Math.random().toString(36).substr(2, 4) + chapterIndex,
-                    title,
-                    content: chapterDoc.body.innerHTML,
+                    title: chapterTitle,
+                    content: chapterDoc.body.innerHTML, // Updated content with IDs
                     level: 1,
-                    subItems: [],
+                    subItems: subItems,
                 } as Chapter;
             }
         }

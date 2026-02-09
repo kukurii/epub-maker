@@ -8,7 +8,7 @@ interface DirectoryProps {
   onSelectChapter: (id: string) => void;
   onScrollToAnchor: (chapterId: string, anchorId: string) => void;
   onUpdateChapters: (chapters: Chapter[]) => void;
-  className?: string; // Add className prop
+  className?: string;
 }
 
 const Directory: React.FC<DirectoryProps> = ({ 
@@ -25,13 +25,19 @@ const Directory: React.FC<DirectoryProps> = ({
   const [editingChapter, setEditingChapter] = useState<Chapter | null>(null);
   const [editFormData, setEditFormData] = useState({ id: '', title: '' });
 
+  // Manual Sort Handler (Button based only)
   const handleMove = (index: number, direction: 'up' | 'down') => {
-    if (direction === 'up' && index === 0) return;
-    if (direction === 'down' && index === chapters.length - 1) return;
+    if (direction === 'up' && index <= 0) return;
+    if (direction === 'down' && index >= chapters.length - 1) return;
 
     const newChapters = [...chapters];
     const swapIndex = direction === 'up' ? index - 1 : index + 1;
-    [newChapters[index], newChapters[swapIndex]] = [newChapters[swapIndex], newChapters[index]];
+    
+    // Swap elements
+    const temp = newChapters[index];
+    newChapters[index] = newChapters[swapIndex];
+    newChapters[swapIndex] = temp;
+    
     onUpdateChapters(newChapters);
   };
 
@@ -75,12 +81,23 @@ const Directory: React.FC<DirectoryProps> = ({
     const newChapter: Chapter = {
       id: Date.now().toString(),
       title: '新建章节',
-      content: '<h1>新建章节</h1><p>开始写作...</p>',
+      content: '',
       level: 1,
       subItems: []
     };
     onUpdateChapters([...chapters, newChapter]);
     onSelectChapter(newChapter.id);
+  };
+
+  const toggleTocInclusion = (index: number) => {
+    const newChapters = [...chapters];
+    const chapter = newChapters[index];
+    // Default is included (excludeFromToc: undefined/false). Toggle it.
+    // If included -> exclude (true)
+    // If excluded -> include (false)
+    const isCurrentlyExcluded = !!chapter.excludeFromToc;
+    newChapters[index] = { ...chapter, excludeFromToc: !isCurrentlyExcluded };
+    onUpdateChapters(newChapters);
   };
 
   const startEdit = (e: React.MouseEvent, chapter: Chapter) => {
@@ -116,6 +133,8 @@ const Directory: React.FC<DirectoryProps> = ({
       setEditingChapter(null);
   };
 
+  // Filter chapters for search
+  // We preserve originalIndex to ensure sorting operations work on the main array even when filtered
   const filteredChapters = chapters.map((c, idx) => ({ ...c, originalIndex: idx })).filter(c => 
     c.title.toLowerCase().includes(searchTerm.toLowerCase()) || 
     c.subItems?.some(s => s.text.toLowerCase().includes(searchTerm.toLowerCase()))
@@ -161,11 +180,29 @@ const Directory: React.FC<DirectoryProps> = ({
                   : 'hover:bg-gray-100/80 text-gray-800'
               }`}
             >
-              <div className="flex-1 min-w-0 font-semibold text-sm truncate pr-2" title={chapterItem.title}>
+              {/* Checkbox for TOC Inclusion */}
+              <div 
+                className="flex items-center justify-center w-6 h-6 mr-2 cursor-pointer group/toc rounded hover:bg-black/5"
+                onClick={(e) => {
+                    e.stopPropagation();
+                    toggleTocInclusion(chapterItem.originalIndex);
+                }}
+                title="是否包含在目录中 (绿色=包含)"
+              >
+                <div className={`w-3.5 h-3.5 rounded-[3px] border flex items-center justify-center transition-all duration-200 ${
+                    !chapterItem.excludeFromToc 
+                    ? 'bg-green-500 border-green-500 shadow-sm' 
+                    : `border-gray-300 bg-white ${currentChapterId === chapterItem.id ? 'border-white/50' : ''}`
+                }`}>
+                   {!chapterItem.excludeFromToc && <div className="w-1.5 h-1.5 bg-white rounded-full shadow-sm" />}
+                </div>
+              </div>
+
+              <div className="flex-1 min-w-0 font-semibold text-sm truncate pr-2 select-none" title={chapterItem.title}>
                 {chapterItem.title || '无标题章节'}
               </div>
 
-              {/* Action Buttons */}
+              {/* Action Buttons - Strictly Manual Sort */}
               <div className={`flex-shrink-0 flex items-center space-x-0.5 ${currentChapterId === chapterItem.id ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'} transition-opacity`}>
                   
                   {chapterItem.originalIndex < chapters.length - 1 && (
@@ -188,22 +225,36 @@ const Directory: React.FC<DirectoryProps> = ({
                      <Settings size={13} />
                   </button>
                   
+                  {/* Sort Up */}
                   <button 
                     onMouseDown={(e) => e.preventDefault()}
                     onClick={(e) => { e.stopPropagation(); handleMove(chapterItem.originalIndex, 'up'); }}
-                    className={`p-1.5 rounded ${currentChapterId === chapterItem.id ? 'hover:bg-blue-600 text-blue-100' : 'hover:bg-gray-200 text-gray-500'}`}
+                    disabled={chapterItem.originalIndex === 0}
+                    className={`p-1.5 rounded transition-all ${
+                        currentChapterId === chapterItem.id 
+                        ? 'hover:bg-blue-600 text-blue-100 disabled:opacity-40 disabled:hover:bg-transparent' 
+                        : 'hover:bg-gray-200 text-gray-500 disabled:opacity-30 disabled:hover:bg-transparent'
+                    }`}
                     title="上移"
                   >
                     <ChevronUp size={13} />
                   </button>
+
+                  {/* Sort Down */}
                   <button 
                     onMouseDown={(e) => e.preventDefault()}
                     onClick={(e) => { e.stopPropagation(); handleMove(chapterItem.originalIndex, 'down'); }}
-                    className={`p-1.5 rounded ${currentChapterId === chapterItem.id ? 'hover:bg-blue-600 text-blue-100' : 'hover:bg-gray-200 text-gray-500'}`}
+                    disabled={chapterItem.originalIndex === chapters.length - 1}
+                    className={`p-1.5 rounded transition-all ${
+                        currentChapterId === chapterItem.id 
+                        ? 'hover:bg-blue-600 text-blue-100 disabled:opacity-40 disabled:hover:bg-transparent' 
+                        : 'hover:bg-gray-200 text-gray-500 disabled:opacity-30 disabled:hover:bg-transparent'
+                    }`}
                     title="下移"
                   >
                     <ChevronDown size={13} />
                   </button>
+
                   <button 
                     onMouseDown={(e) => e.preventDefault()}
                     onClick={(e) => { e.stopPropagation(); handleDelete(chapterItem.originalIndex); }}
@@ -215,7 +266,7 @@ const Directory: React.FC<DirectoryProps> = ({
               </div>
             </div>
 
-            {/* Sub Items */}
+            {/* Sub Items (TOC Levels) */}
             <div className="relative pl-4 space-y-0.5 mt-1">
                {chapterItem.subItems && chapterItem.subItems.length > 0 && (
                  <div className="absolute left-6 top-0 bottom-2 w-px bg-gray-200"></div>
