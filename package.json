@@ -9,13 +9,14 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "react": "18.3.1",
-    "react-dom": "18.3.1",
-    "lucide-react": "0.344.0",
-    "jszip": "3.10.1",
-    "html-to-image": "1.11.13",
+    "@google/genai": "latest",
     "file-saver": "2.0.5",
-    "@google/genai": "latest"
+    "html-to-image": "1.11.13",
+    "jszip": "3.10.1",
+    "localforage": "^1.10.0",
+    "lucide-react": "0.344.0",
+    "react": "18.3.1",
+    "react-dom": "18.3.1"
   },
   "devDependencies": {
     "@types/node": "^22.14.0",

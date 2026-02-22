@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { ProjectData, CoverDesign, Chapter, TocItem } from '../types';
+import localforage from 'localforage';
 
 const STORAGE_KEY = 'epub_maker_project_v1';
 
@@ -19,19 +20,19 @@ const INITIAL_COVER_DESIGN: CoverDesign = {
     textShadow: true,
     borderStyle: 'none',
     backgroundCSS: 'background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);',
-    showSeries: false 
+    showSeries: false
 };
 
 export const getInitialState = (): ProjectData => ({
     metadata: {
-      title: '未命名书籍',
-      creator: '未知作者',
-      language: 'zh',
-      description: '',
-      publisher: '',
-      date: new Date().toISOString().split('T')[0],
-      series: '',
-      subjects: []
+        title: '未命名书籍',
+        creator: '未知作者',
+        language: 'zh',
+        description: '',
+        publisher: '',
+        date: new Date().toISOString().split('T')[0],
+        series: '',
+        subjects: []
     },
     chapters: [],
     images: [],
@@ -56,33 +57,57 @@ export const useProject = () => {
     const [activeChapterId, setActiveChapterId] = useState<string | null>(null);
     const [isLoaded, setIsLoaded] = useState(false);
 
-    // Load from LocalStorage on mount
+    // Load from IndexedDB (localforage) on mount
     useEffect(() => {
-        const saved = localStorage.getItem(STORAGE_KEY);
-        if (saved) {
+        const loadProjectData = async () => {
             try {
-                const parsed = JSON.parse(saved);
-                setProject({
-                    ...getInitialState(), 
-                    ...parsed,
-                    coverDesign: parsed.coverDesign || { ...INITIAL_COVER_DESIGN },
-                    extraFiles: parsed.extraFiles || [], // Ensure this is always an array
-                    isPresetStyleActive: parsed.isPresetStyleActive !== undefined ? parsed.isPresetStyleActive : true,
-                    coverGeneratorState: parsed.coverGeneratorState || {
-                        selectedBgImageId: null,
-                        activeTemplateIndex: 0,
-                        showTextOnCover: true,
-                        aiCoverPrompt: ''
+                // Try to get from localforage first
+                let savedData: any = await localforage.getItem(STORAGE_KEY);
+
+                // If not found in localforage, try migrating from legacy localStorage
+                if (!savedData) {
+                    const legacyDataStr = localStorage.getItem(STORAGE_KEY);
+                    if (legacyDataStr) {
+                        try {
+                            savedData = JSON.parse(legacyDataStr);
+                            // Migrate it to localforage immediately
+                            await localforage.setItem(STORAGE_KEY, savedData);
+                            // Clear legacy data
+                            localStorage.removeItem(STORAGE_KEY);
+                            console.log('Project data successfully migrated from LocalStorage to IndexedDB.');
+                        } catch (legacyErr) {
+                            console.error('Failed to parse legacy localStorage data', legacyErr);
+                        }
                     }
-                });
-                if (parsed.chapters && parsed.chapters.length > 0) {
-                    setActiveChapterId(parsed.chapters[0].id);
+                }
+
+                if (savedData) {
+                    setProject({
+                        ...getInitialState(),
+                        ...savedData,
+                        coverDesign: savedData.coverDesign || { ...INITIAL_COVER_DESIGN },
+                        extraFiles: savedData.extraFiles || [],
+                        isPresetStyleActive: savedData.isPresetStyleActive !== undefined ? savedData.isPresetStyleActive : true,
+                        coverGeneratorState: savedData.coverGeneratorState || {
+                            selectedBgImageId: null,
+                            activeTemplateIndex: 0,
+                            showTextOnCover: true,
+                            aiCoverPrompt: ''
+                        }
+                    });
+                    if (savedData.chapters && savedData.chapters.length > 0) {
+                        setActiveChapterId(savedData.chapters[0].id);
+                    }
                 }
             } catch (e) {
-                console.error("Failed to load project", e);
+                console.error("Failed to load project from storage", e);
+            } finally {
+                // We add a tiny delay for smooth UI transition
+                setTimeout(() => setIsLoaded(true), 300);
             }
-        }
-        setTimeout(() => setIsLoaded(true), 500);
+        };
+
+        loadProjectData();
     }, []);
 
     const updateProject = (updates: Partial<ProjectData>) => {
@@ -118,28 +143,27 @@ export const useProject = () => {
 
         // Helper to parse title and subItems from HTML content
         const parseMeta = (html: string, defaultTitle: string) => {
-             const parser = new DOMParser();
-             const doc = parser.parseFromString(html, 'text/html');
-             const headings = doc.querySelectorAll('h1, h2');
-             let title = defaultTitle;
-             const subItems: TocItem[] = [];
-             let titleFound = false;
-             
-             headings.forEach(el => {
-                 // IDs should usually exist from Editor, if not we ignore or should have ensured they exist
-                 const text = el.textContent?.trim() || '';
-                 if (el.tagName === 'H1') {
-                     if (!titleFound) {
-                         title = text;
-                         titleFound = true;
-                     } else {
-                         if (el.id) subItems.push({ id: el.id, text, level: 1 });
-                     }
-                 } else if (el.tagName === 'H2') {
-                     if (el.id) subItems.push({ id: el.id, text, level: 2 });
-                 }
-             });
-             return { title, subItems };
+            const parser = new DOMParser();
+            const doc = parser.parseFromString(html, 'text/html');
+            const headings = doc.querySelectorAll('h1, h2');
+            let title = defaultTitle;
+            const subItems: TocItem[] = [];
+            let titleFound = false;
+
+            headings.forEach(el => {
+                const text = el.textContent?.trim() || '';
+                if (el.tagName === 'H1') {
+                    if (!titleFound) {
+                        title = text;
+                        titleFound = true;
+                    } else {
+                        if (el.id) subItems.push({ id: el.id, text, level: 1 });
+                    }
+                } else if (el.tagName === 'H2') {
+                    if (el.id) subItems.push({ id: el.id, text, level: 2 });
+                }
+            });
+            return { title, subItems };
         };
 
         setProject(prev => {
@@ -147,19 +171,17 @@ export const useProject = () => {
             if (chapterIndex === -1) return prev;
 
             const currentChapter = prev.chapters[chapterIndex];
-            
-            // Recalculate metadata for both parts
-            // Use current title as fallback for the first part
+
             const beforeMeta = parseMeta(beforeContent, currentChapter.title);
-            const updatedCurrentChapter = { 
-                ...currentChapter, 
+            const updatedCurrentChapter = {
+                ...currentChapter,
                 content: beforeContent,
-                title: beforeMeta.title, 
+                title: beforeMeta.title,
                 subItems: beforeMeta.subItems
             };
 
             const afterMeta = parseMeta(afterContent, '新章节 (切分)');
-            
+
             const newChapter: Chapter = {
                 id: Date.now().toString(),
                 title: afterMeta.title,
@@ -176,8 +198,7 @@ export const useProject = () => {
             return { ...prev, chapters: newChapters };
         });
     };
-    
-    // Specifically for when files are imported
+
     const loadChaptersFromImport = (chapters: Chapter[], firstChapterId: string) => {
         updateProject({ chapters });
         setActiveChapterId(firstChapterId);
