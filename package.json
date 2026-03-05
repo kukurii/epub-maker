@@ -10,6 +10,13 @@
   },
   "dependencies": {
     "@google/genai": "latest",
+    "@tiptap/extension-image": "^3.20.0",
+    "@tiptap/extension-link": "^3.20.0",
+    "@tiptap/extension-text-align": "^3.20.0",
+    "@tiptap/extension-underline": "^3.20.0",
+    "@tiptap/pm": "^3.20.0",
+    "@tiptap/react": "^3.20.0",
+    "@tiptap/starter-kit": "^3.20.0",
     "file-saver": "2.0.5",
     "html-to-image": "1.11.13",
     "jszip": "3.10.1",

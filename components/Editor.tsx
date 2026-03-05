@@ -583,9 +583,9 @@ const Editor: React.FC<EditorProps & { activeChapter?: { title: string } }> = ({
       )}
 
       {/* Editor Content Area */}
-      <div className="flex-1 overflow-y-auto bg-[#F9FAFB] p-2 md:p-8 scroll-smooth pb-20">
+      <div className="flex-1 overflow-y-auto bg-slate-50 p-2 md:p-8 scroll-smooth pb-20">
         <div
-          className="relative mx-auto w-full max-w-[800px] bg-white shadow-sm border border-gray-100/50 min-h-[900px] md:min-h-[1100px] p-6 md:p-16 cursor-text transition-all rounded-sm flex flex-col"
+          className="relative mx-auto w-full max-w-[800px] bg-white ring-1 ring-gray-900/5 shadow-xl min-h-[900px] md:min-h-[1100px] p-6 md:p-16 cursor-text transition-all rounded-xl flex flex-col"
           onClick={(e) => {
             // Only focus if they click in the empty space, not on a specific element that needs native handling
             if (e.target === e.currentTarget && editorRef.current) {

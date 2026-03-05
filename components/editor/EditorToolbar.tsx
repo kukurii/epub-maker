@@ -2,7 +2,7 @@ import React from 'react';
 import { 
   Heading1, Heading2, Bold, Italic, Underline, Strikethrough, Link, Quote, List, ListOrdered, 
   Image as ImageIcon, AlignLeft, AlignJustify, RotateCcw, RotateCw, 
-  Search, Scissors, Minus, Captions, ArrowLeft 
+  Search, Scissors, Captions, ArrowLeft
 } from 'lucide-react';
 
 interface ToolbarButtonProps {
@@ -65,9 +65,25 @@ const EditorToolbar: React.FC<EditorToolbarProps> = ({
         }
     };
 
+
+
+    const DIVIDERS = [
+        { label: '默认 hr', cls: '',          preview: '——' },
+        { label: '分割线 1', cls: 'divider-1', preview: '* * *' },
+        { label: '分割线 2', cls: 'divider-2', preview: '◈ ◈ ◈' },
+        { label: '分割线 3', cls: 'divider-3', preview: '❀ ✿ ❀' },
+        { label: '分割线 4', cls: 'divider-4', preview: '• • •' },
+        { label: '分割线 5', cls: 'divider-5', preview: '～～～' },
+    ];
+
+    const insertDivider = (cls: string) => {
+        const html = cls ? `<hr class="${cls}" />` : `<hr />`;
+        execCmd('insertHTML', html);
+    };
+
     return (
-        <div className="flex-none h-14 bg-white border-b border-gray-200 px-2 md:px-6 flex items-center justify-between z-20 shadow-[0_2px_10px_rgba(0,0,0,0.02)]">
-            <div className="flex items-center flex-1 overflow-x-auto no-scrollbar mask-gradient-right">
+        <div className="relative z-50 flex-none min-h-[56px] bg-white border-b border-gray-200 px-2 md:px-6 py-2 flex items-center justify-between shadow-sm">
+            <div className="flex items-center flex-1 flex-wrap gap-y-2">
                 
                 {/* Mobile Back Button */}
                 {onMobileBack && (
@@ -127,10 +143,25 @@ const EditorToolbar: React.FC<EditorToolbarProps> = ({
 
                 <div className="h-5 w-px bg-gray-200 mx-2 flex-shrink-0" />
 
-                {/* Insert & Actions */}
+                {/* Insert Buttons */}
                 <div className="flex items-center space-x-1 mx-2 flex-shrink-0">
-                    <ToolbarButton icon={<ImageIcon size={16} />} onClick={() => setShowImageModal(true)} title="插入图片" />
-                    <ToolbarButton icon={<Minus size={16} />} onClick={() => execCmd('insertHorizontalRule')} title="插入分割线" />
+                    {/* 分割线改为直接平铺显示，不再使用下拉菜单 */}
+                    <div className="flex items-center space-x-1 flex-shrink-0 bg-gray-50 p-1 rounded-lg">
+                        <span className="text-xs text-gray-400 font-medium px-1 mr-1">分割线:</span>
+                        {DIVIDERS.map(({ label, cls }, index) => (
+                            <button
+                                key={cls || 'hr'}
+                                onClick={(e) => {
+                                    e.preventDefault(); 
+                                    insertDivider(cls);
+                                }}
+                                title={label}
+                                className="w-6 h-6 flex items-center justify-center text-xs text-gray-600 font-medium hover:bg-blue-100 hover:text-blue-700 rounded transition-colors"
+                            >
+                                {index + 1}
+                            </button>
+                        ))}
+                    </div>
                 </div>
 
                 <div className="h-5 w-px bg-gray-200 mx-2 flex-shrink-0" />

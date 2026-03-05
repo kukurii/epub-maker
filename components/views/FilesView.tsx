@@ -337,27 +337,19 @@ const FilesView: React.FC<FilesViewProps> = ({ onProjectUpdate, onChaptersLoaded
 
 
                     <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-3 pt-3 border-t border-gray-200">EPUB 解析选项</label>
-                    <div className="space-y-3">
-                        <label className="flex items-start space-x-3 cursor-pointer group">
-                            <div className="relative flex items-start">
-                                <div className="flex items-center h-5">
-                                    <input type="checkbox" checked={cleanHtml} onChange={e => setCleanHtml(e.target.checked)} className="w-4 h-4 rounded text-blue-600 focus:ring-blue-500 border-gray-300 transition-colors" />
-                                </div>
-                                <div className="ml-3 text-xs">
-                                    <span className="font-semibold text-gray-700 group-hover:text-blue-600 transition-colors">清洗旧版 HTML 格式</span>
-                                    <p className="text-gray-400 mt-0.5 leading-relaxed">强力移除无用的 {`<br>, <span>, <style>`} 等多余标签，使导入的内容更加纯净。</p>
-                                </div>
+                    <div className="space-y-2">
+                        <label className="flex items-center gap-3 cursor-pointer group bg-white hover:bg-blue-50/60 border border-gray-200 hover:border-blue-200 rounded-xl px-4 py-3 transition-all">
+                            <input type="checkbox" checked={cleanHtml} onChange={e => setCleanHtml(e.target.checked)} className="w-4 h-4 rounded text-blue-600 focus:ring-blue-500 border-gray-300 shrink-0 transition-colors" />
+                            <div className="text-left text-xs">
+                                <span className="font-semibold text-gray-700 group-hover:text-blue-600 transition-colors">清洗旧版 HTML 格式</span>
+                                <p className="text-gray-400 mt-0.5 leading-relaxed">强力移除无用的 {`<br>, <span>, <style>`} 等多余标签，使导入的内容更加纯净。</p>
                             </div>
                         </label>
-                        <label className="flex items-start space-x-3 cursor-pointer group">
-                            <div className="relative flex items-start">
-                                <div className="flex items-center h-5">
-                                    <input type="checkbox" checked={removeImages} onChange={e => setRemoveImages(e.target.checked)} className="w-4 h-4 rounded text-blue-600 focus:ring-blue-500 border-gray-300 transition-colors" />
-                                </div>
-                                <div className="ml-3 text-xs">
-                                    <span className="font-semibold text-gray-700 group-hover:text-blue-600 transition-colors">移除章节内页原配图片</span>
-                                    <p className="text-gray-400 mt-0.5 leading-relaxed">解决某些旧电子书每一章开头都带一张相同的超巨大封面，导致文件体积爆炸的问题。</p>
-                                </div>
+                        <label className="flex items-center gap-3 cursor-pointer group bg-white hover:bg-blue-50/60 border border-gray-200 hover:border-blue-200 rounded-xl px-4 py-3 transition-all">
+                            <input type="checkbox" checked={removeImages} onChange={e => setRemoveImages(e.target.checked)} className="w-4 h-4 rounded text-blue-600 focus:ring-blue-500 border-gray-300 shrink-0 transition-colors" />
+                            <div className="text-left text-xs">
+                                <span className="font-semibold text-gray-700 group-hover:text-blue-600 transition-colors">移除章节内页原配图片</span>
+                                <p className="text-gray-400 mt-0.5 leading-relaxed">解决某些旧电子书每一章开头都带一张相同的超巨大封面，导致文件体积爆炸的问题。</p>
                             </div>
                         </label>
                     </div>
