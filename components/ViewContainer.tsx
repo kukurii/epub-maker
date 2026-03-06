@@ -48,43 +48,44 @@ const ViewContainer: React.FC<ViewContainerProps> = ({
 }) => {
   switch (currentView) {
     case 'files':
-      return <FilesView 
-          onProjectUpdate={onUpdateProject} 
-          onChaptersLoaded={onChaptersLoaded} 
-          onLoadingStart={onLoadingStart}
-          onLoadingEnd={onLoadingEnd}
+      return <FilesView
+        onProjectUpdate={onUpdateProject}
+        onChaptersLoaded={onChaptersLoaded}
+        onLoadingStart={onLoadingStart}
+        onLoadingEnd={onLoadingEnd}
       />;
     case 'chapters':
       return (
         <div className="flex flex-1 h-full overflow-hidden relative">
           <div className={`${activeChapterId ? 'hidden md:flex' : 'flex'} w-full md:w-auto h-full flex-col`}>
-              <Directory
-                  chapters={project.chapters}
-                  currentChapterId={activeChapterId}
-                  onSelectChapter={onSelectChapter}
-                  onScrollToAnchor={onScrollToAnchor}
-                  onUpdateChapters={onUpdateChapters}
-                  className="w-full md:w-80"
-              />
+            <Directory
+              chapters={project.chapters}
+              images={project.images}
+              currentChapterId={activeChapterId}
+              onSelectChapter={onSelectChapter}
+              onScrollToAnchor={onScrollToAnchor}
+              onUpdateChapters={onUpdateChapters}
+              className="w-full md:w-80"
+            />
           </div>
-          
+
           <div className={`${!activeChapterId ? 'hidden md:flex' : 'flex'} flex-1 h-full flex-col`}>
-              {activeChapter ? (
+            {activeChapter ? (
               <Editor
-                  key={activeChapterId}
-                  content={activeChapter.content}
-                  onContentChange={onUpdateChapterContent}
-                  onSplitChapter={onSplitChapter}
-                  project={project}
-                  scrollToId={scrollToAnchor}
-                  onMobileBack={onMobileBack}
+                key={activeChapterId}
+                content={activeChapter.content}
+                onContentChange={onUpdateChapterContent}
+                onSplitChapter={onSplitChapter}
+                project={project}
+                scrollToId={scrollToAnchor}
+                onMobileBack={onMobileBack}
               />
-              ) : (
+            ) : (
               <div className="flex-1 flex flex-col items-center justify-center bg-gray-50 text-gray-400">
-                  <BookOpen size={48} className="mb-4"/>
-                  <p>请从左侧选择一个章节开始编辑</p>
+                <BookOpen size={48} className="mb-4" />
+                <p>请从左侧选择一个章节开始编辑</p>
               </div>
-              )}
+            )}
           </div>
         </div>
       );
@@ -95,15 +96,15 @@ const ViewContainer: React.FC<ViewContainerProps> = ({
     case 'images':
       return <ImagesView images={project.images} onUpdateImages={(images) => onUpdateProject({ images })} />;
     case 'cover':
-      return <CoverGenerator 
-                project={project} 
-                onUpdateCover={(cover, coverId) => onUpdateProject({ cover, coverId: coverId || null })} 
-                onUpdateCoverCSS={(coverCustomCSS) => onUpdateProject({ coverCustomCSS })}
-                onUpdateCoverDesign={(coverDesign) => onUpdateProject({ coverDesign })}
-                onAddImage={(img) => onUpdateProject({ images: [...project.images, img] })}
-                coverGeneratorState={project.coverGeneratorState}
-                onUpdateGeneratorState={(state) => onUpdateProject({ coverGeneratorState: { ...project.coverGeneratorState, ...state } })}
-             />;
+      return <CoverGenerator
+        project={project}
+        onUpdateCover={(cover, coverId) => onUpdateProject({ cover, coverId: coverId || null })}
+        onUpdateCoverCSS={(coverCustomCSS) => onUpdateProject({ coverCustomCSS })}
+        onUpdateCoverDesign={(coverDesign) => onUpdateProject({ coverDesign })}
+        onAddImage={(img) => onUpdateProject({ images: [...project.images, img] })}
+        coverGeneratorState={project.coverGeneratorState}
+        onUpdateGeneratorState={(state) => onUpdateProject({ coverGeneratorState: { ...project.coverGeneratorState, ...state } })}
+      />;
     case 'structure':
       return <StructureView project={project} onUpdateProject={onUpdateProject} />;
     default:

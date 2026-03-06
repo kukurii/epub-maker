@@ -1,9 +1,10 @@
 import React, { useState } from 'react';
-import { Chapter } from '../types';
-import { ChevronUp, ChevronDown, Trash2, Plus, Search, ArrowDownToLine, Settings, X, Save, Hash, Eye } from 'lucide-react';
+import { Chapter, ImageAsset } from '../types';
+import { ChevronUp, ChevronDown, Trash2, Plus, Search, ArrowDownToLine, Settings, X, Save, Hash, Eye, ImageMinus } from 'lucide-react';
 
 interface DirectoryProps {
   chapters: Chapter[];
+  images: ImageAsset[];
   currentChapterId: string | null;
   onSelectChapter: (id: string) => void;
   onScrollToAnchor: (chapterId: string, anchorId: string) => void;
@@ -59,6 +60,7 @@ const TocPreviewModal: React.FC<{ chapters: Chapter[], onClose: () => void }> = 
 
 const Directory: React.FC<DirectoryProps> = ({
   chapters,
+  images,
   currentChapterId,
   onSelectChapter,
   onScrollToAnchor,
@@ -147,6 +149,42 @@ const Directory: React.FC<DirectoryProps> = ({
     onUpdateChapters(newChapters);
   };
 
+  const handleCleanInvalidImages = () => {
+    if (!window.confirm('确定要清理所有章节中引用已失效的图片吗？这不可恢复。')) return;
+
+    let totalRemoved = 0;
+    const newChapters = chapters.map(chapter => {
+      let content = chapter.content;
+      if (!content) return chapter;
+
+      const parser = new DOMParser();
+      const doc = parser.parseFromString(content, 'text/html');
+      const imageNodes = doc.querySelectorAll('img[data-id]');
+
+      let removedInChapter = 0;
+      imageNodes.forEach(img => {
+        const id = img.getAttribute('data-id');
+        if (id && !images.some(image => image.id === id)) {
+          img.remove();
+          removedInChapter++;
+        }
+      });
+
+      if (removedInChapter > 0) {
+        totalRemoved += removedInChapter;
+        return { ...chapter, content: doc.body.innerHTML };
+      }
+      return chapter;
+    });
+
+    if (totalRemoved > 0) {
+      onUpdateChapters(newChapters);
+      alert(`清理完成，共移除了 ${totalRemoved} 个失效图片引用。`);
+    } else {
+      alert('没有发现失效的图片引用。');
+    }
+  };
+
   const startEdit = (e: React.MouseEvent, chapter: Chapter) => {
     e.stopPropagation();
     setEditingChapter(chapter);
@@ -200,6 +238,13 @@ const Directory: React.FC<DirectoryProps> = ({
               title="预览总目录"
             >
               <Eye size={16} />
+            </button>
+            <button
+              onClick={handleCleanInvalidImages}
+              className="text-gray-500 hover:text-red-600 font-medium text-sm flex items-center hover:bg-red-50 px-2 py-1 rounded-lg transition-colors"
+              title="一键移除所有章节中的失效图片"
+            >
+              <ImageMinus size={16} />
             </button>
             <button
               onClick={handleAdd}
