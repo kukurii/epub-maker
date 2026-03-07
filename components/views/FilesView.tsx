@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Settings2, Library, BookOpen, FileType, Cloud } from 'lucide-react';
+import { Settings2, Library, BookOpen, FileType, Cloud, X, ChevronUp, ChevronDown } from 'lucide-react';
 import { Chapter, ProjectData, ImageAsset, ExtraFile, Metadata } from '../../types';
 import { parseTxtToChapters } from '../../services/textParser';
 import { parseEpub } from '../../services/epubImport';
@@ -19,6 +19,9 @@ const FilesView: React.FC<FilesViewProps> = ({ onProjectUpdate, onChaptersLoaded
     const [removeImages, setRemoveImages] = useState(false);
     const [showSplitSettings, setShowSplitSettings] = useState(false);
     const [dragActive, setDragActive] = useState<DragZoneType>(null);
+    const [batchFiles, setBatchFiles] = useState<File[]>([]);
+    const [primaryFileIndex, setPrimaryFileIndex] = useState<number>(0);
+    const [showBatchModal, setShowBatchModal] = useState<boolean>(false);
 
     // --- Processing Logic (Extracted for reuse) ---
 
@@ -99,25 +102,54 @@ const FilesView: React.FC<FilesViewProps> = ({ onProjectUpdate, onChaptersLoaded
         }
     };
 
-    const processBatchFiles = async (files: FileList | File[]) => {
+    const handleShowBatchOptions = (files: FileList | File[]) => {
         const epubFiles = Array.from(files).filter(f => f.name.toLowerCase().endsWith('.epub'));
         if (epubFiles.length === 0) {
             alert('请选择至少一个 .epub 文件');
             return;
         }
 
-        onLoadingStart(`准备合并 ${epubFiles.length} 本书籍...`);
+        const sortedFiles = epubFiles.sort((a, b) => a.name.localeCompare(b.name, 'zh'));
+        setBatchFiles(sortedFiles);
+        setPrimaryFileIndex(0);
+        setShowBatchModal(true);
+    };
+
+    const handleMoveBatchFile = (index: number, direction: 'up' | 'down', e: React.MouseEvent) => {
+        e.preventDefault();
+        e.stopPropagation();
+
+        if (direction === 'up' && index === 0) return;
+        if (direction === 'down' && index === batchFiles.length - 1) return;
+
+        const newIndex = direction === 'up' ? index - 1 : index + 1;
+        const newBatchFiles = [...batchFiles];
+        // Swap elements
+        const temp = newBatchFiles[index];
+        newBatchFiles[index] = newBatchFiles[newIndex];
+        newBatchFiles[newIndex] = temp;
+
+        // Adjust primaryFileIndex if it's affected
+        if (primaryFileIndex === index) {
+            setPrimaryFileIndex(newIndex);
+        } else if (primaryFileIndex === newIndex) {
+            setPrimaryFileIndex(index);
+        }
+
+        setBatchFiles(newBatchFiles);
+    };
+
+    const processBatchFiles = async (fileList: File[], primaryIndex: number) => {
+        onLoadingStart(`准备合并 ${fileList.length} 本书籍...`);
 
         try {
             let mergedChapters: Chapter[] = [];
             let mergedImages: ImageAsset[] = [];
             let mergedExtraFiles: ExtraFile[] = [];
             let mergedCustomCSS = '';
-            let firstMetadata: Metadata | null = null;
-            let firstCover: string | null = null;
+            let primaryMetadata: Metadata | null = null;
+            let primaryCover: string | null = null;
             let globalImageCount = 0;
-
-            const fileList = epubFiles.sort((a, b) => a.name.localeCompare(b.name, 'zh'));
 
             for (let i = 0; i < fileList.length; i++) {
                 onLoadingStart(`正在合并第 ${i + 1}/${fileList.length} 本书: ${fileList[i].name}`);
@@ -139,12 +171,14 @@ const FilesView: React.FC<FilesViewProps> = ({ onProjectUpdate, onChaptersLoaded
                 if (result.extraFiles) mergedExtraFiles = [...mergedExtraFiles, ...result.extraFiles];
                 if (result.customCSS) mergedCustomCSS += `\n/* From ${file.name} */\n` + result.customCSS;
 
-                if (!firstMetadata && result.metadata) firstMetadata = result.metadata;
-                if (!firstCover && result.cover) firstCover = result.cover;
+                if (i === primaryIndex) {
+                    if (result.metadata) primaryMetadata = result.metadata;
+                    if (result.cover) primaryCover = result.cover;
+                }
             }
 
             onProjectUpdate({
-                metadata: firstMetadata || {
+                metadata: primaryMetadata || {
                     title: '合并书籍合集',
                     creator: '多位作者',
                     language: 'zh',
@@ -157,7 +191,7 @@ const FilesView: React.FC<FilesViewProps> = ({ onProjectUpdate, onChaptersLoaded
                 chapters: mergedChapters,
                 images: mergedImages,
                 extraFiles: mergedExtraFiles,
-                cover: firstCover,
+                cover: primaryCover,
                 customCSS: mergedCustomCSS
             });
 
@@ -188,7 +222,7 @@ const FilesView: React.FC<FilesViewProps> = ({ onProjectUpdate, onChaptersLoaded
 
     const handleBatchEpubUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
         const files = e.target.files;
-        if (files) processBatchFiles(files);
+        if (files) handleShowBatchOptions(files);
         e.target.value = ''; // Clear input
     };
 
@@ -225,7 +259,7 @@ const FilesView: React.FC<FilesViewProps> = ({ onProjectUpdate, onChaptersLoaded
             } else if (zone === 'epub') {
                 processEpubFile(files[0]);
             } else if (zone === 'batch') {
-                processBatchFiles(files);
+                handleShowBatchOptions(files);
             }
         }
     };
@@ -355,6 +389,78 @@ const FilesView: React.FC<FilesViewProps> = ({ onProjectUpdate, onChaptersLoaded
                     </div>
                 </div>
             </div>
+
+            {/* Batch Merge Options Modal */}
+            {showBatchModal && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+                    <div className="bg-white rounded-2xl shadow-2xl max-w-lg w-full max-h-[80vh] flex flex-col overflow-hidden animate-in zoom-in-95">
+                        <div className="p-5 border-b border-gray-100 flex items-center justify-between bg-gray-50/50">
+                            <div>
+                                <h3 className="text-lg font-bold text-gray-900">批量合并选项</h3>
+                                <p className="text-xs text-gray-500 mt-1">请选择一本主书，合并后将使用该书的封面和元数据。</p>
+                            </div>
+                            <button onClick={() => setShowBatchModal(false)} className="text-gray-400 hover:text-gray-600 bg-gray-100/50 hover:bg-gray-200/50 p-2 rounded-full transition-colors">
+                                <X size={20} />
+                            </button>
+                        </div>
+                        <div className="p-4 overflow-y-auto flex-1 space-y-2">
+                            {batchFiles.map((file, idx) => (
+                                <label key={idx} className={`flex items-center gap-3 p-3 rounded-xl border cursor-pointer transition-all ${primaryFileIndex === idx ? 'border-indigo-500 bg-indigo-50/50 shadow-sm' : 'border-gray-200 hover:border-indigo-200 hover:bg-gray-50'}`}>
+                                    <input
+                                        type="radio"
+                                        name="primaryBook"
+                                        checked={primaryFileIndex === idx}
+                                        onChange={() => setPrimaryFileIndex(idx)}
+                                        className="w-4 h-4 text-indigo-600 focus:ring-indigo-500 border-gray-300"
+                                    />
+                                    <div className="flex-1 min-w-0">
+                                        <p className={`text-sm truncate font-medium ${primaryFileIndex === idx ? 'text-indigo-900' : 'text-gray-700'}`}>{file.name}</p>
+                                    </div>
+                                    {primaryFileIndex === idx && <span className="text-xs font-bold text-indigo-600 bg-indigo-100 px-2 py-1 rounded-md">主书本</span>}
+
+                                    <div className="flex items-center gap-1 border-l pl-2 border-gray-100/50">
+                                        <button
+                                            type="button"
+                                            onClick={(e) => handleMoveBatchFile(idx, 'up', e)}
+                                            disabled={idx === 0}
+                                            className={`p-1.5 rounded-lg transition-colors ${idx === 0 ? 'opacity-20 cursor-not-allowed' : 'hover:bg-gray-100 text-gray-500 hover:text-gray-700'}`}
+                                            title="上移"
+                                        >
+                                            <ChevronUp size={16} />
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={(e) => handleMoveBatchFile(idx, 'down', e)}
+                                            disabled={idx === batchFiles.length - 1}
+                                            className={`p-1.5 rounded-lg transition-colors ${idx === batchFiles.length - 1 ? 'opacity-20 cursor-not-allowed' : 'hover:bg-gray-100 text-gray-500 hover:text-gray-700'}`}
+                                            title="下移"
+                                        >
+                                            <ChevronDown size={16} />
+                                        </button>
+                                    </div>
+                                </label>
+                            ))}
+                        </div>
+                        <div className="p-5 border-t border-gray-100 flex justify-end gap-3 bg-gray-50">
+                            <button
+                                onClick={() => setShowBatchModal(false)}
+                                className="px-5 py-2.5 text-sm font-medium text-gray-600 bg-white border border-gray-200 hover:bg-gray-50 rounded-xl transition-colors"
+                            >
+                                取消
+                            </button>
+                            <button
+                                onClick={() => {
+                                    setShowBatchModal(false);
+                                    processBatchFiles(batchFiles, primaryFileIndex);
+                                }}
+                                className="px-5 py-2.5 text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 rounded-xl shadow-md shadow-indigo-600/20 transition-all active:scale-95"
+                            >
+                                开始合并
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 };

@@ -17,6 +17,9 @@ const fixXHTML = (html: string): string => {
         fixed = fixed.replace(regex, `<${tag}$1 />`);
     });
 
+    // Ensure <fy></fy> tags are properly formed if the editor output them as <fy/>
+    fixed = fixed.replace(/<fy\s*\/>/gi, "<fy></fy>");
+
     return fixed;
 };
 
@@ -42,7 +45,7 @@ export const generateEpub = async (project: ProjectData) => {
     // --- CSS ---
     const activeStyle = PRESET_STYLES.find(s => s.id === project.activeStyleId) || PRESET_STYLES[0];
     const presetCss = project.isPresetStyleActive !== false ? activeStyle.css : '/* Preset style disabled by user. */';
-    const finalCss = `${presetCss}\n\n/* Custom CSS */\n${project.customCSS}`;
+    const finalCss = `${presetCss}\n\n/* Custom CSS */\n${project.customCSS}\n\n/* → 隐藏分页标记，但保留分页功能 */\nfy {display: none;page-break-after: always;break-after: page;}`;
     oebps.file('style.css', finalCss);
 
     // --- Extra Files (Custom CSS created in Structure View) ---

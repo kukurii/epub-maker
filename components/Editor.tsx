@@ -277,7 +277,7 @@ const Editor: React.FC<EditorProps & { activeChapter?: { title: string } }> = ({
   };
 
   const insertImage = (img: ImageAsset) => {
-    const html = `<img src="${img.data}" data-id="${img.id}" data-filename="${img.name}" alt="${img.name}" />`;
+    const html = `<img src="${img.data}" data-id="${img.id}" data-filename="${img.name}" alt="${img.name}" /><fy></fy>`;
     editorRef.current?.focus();
     execCmd('insertHTML', html);
     setShowImageModal(false);
@@ -503,6 +503,13 @@ const Editor: React.FC<EditorProps & { activeChapter?: { title: string } }> = ({
     .editor-paper .search-highlight--current {
       background-color: #f97316; /* orange-600 */
       color: white;
+    }
+    
+    /* → 隐藏分页标记，但保留分页功能 */
+    .editor-paper fy {
+      display: none;
+      page-break-after: always;
+      break-after: page;
     }
 
     /* Missing Image Placeholder */
