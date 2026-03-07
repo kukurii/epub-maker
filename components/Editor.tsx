@@ -4,6 +4,7 @@ import { ProjectData, PRESET_STYLES, ImageAsset, TocItem } from '../types';
 import EditorToolbar from './editor/EditorToolbar';
 import FindReplaceBar from './editor/FindReplaceBar';
 import ImageModal from './editor/ImageModal';
+import { dialog } from '../services/dialog';
 
 interface EditorProps {
   content: string;
@@ -188,12 +189,12 @@ const Editor: React.FC<EditorProps & { activeChapter?: { title: string } }> = ({
     const el = editorRef.current;
     if (!el) return;
 
-    const handleClick = (e: MouseEvent) => {
+    const handleClick = async (e: MouseEvent) => {
       const target = e.target as HTMLElement;
       if (target.tagName === 'IMG' && target.classList.contains('image-missing')) {
         e.preventDefault();
         e.stopPropagation();
-        if (confirm(`确认从文章中移除该失效图片引用吗？`)) {
+        if (await dialog.confirm(`确认从文章中移除该失效图片引用吗？`)) {
           target.remove();
           flushUpdates();
         }
@@ -283,13 +284,13 @@ const Editor: React.FC<EditorProps & { activeChapter?: { title: string } }> = ({
     setShowImageModal(false);
   };
 
-  const handleSplit = () => {
+  const handleSplit = async () => {
     // Ensure IDs exist on content before splitting, as splitting logic depends on them for TOC
     flushUpdates();
 
     const selection = window.getSelection();
     if (!selection || selection.rangeCount === 0 || !editorRef.current) {
-      alert("请先点击编辑器内容，将光标放在要切分的位置。");
+      await dialog.alert("请先点击编辑器内容，将光标放在要切分的位置。");
       return;
     }
 

@@ -3,6 +3,7 @@ import * as htmlToImage from 'html-to-image';
 import { ProjectData, CoverDesign, ImageAsset, CoverGeneratorState } from '../../types';
 import { Upload, Camera, Type, Check, Code, Loader2, Sparkles, Library, X, ChevronDown, ChevronUp, Palette, Plus, Settings2, Info } from 'lucide-react';
 import { GoogleGenAI } from '@google/genai';
+import { dialog } from '../../services/dialog';
 
 interface CoverGeneratorProps {
   project: ProjectData;
@@ -349,7 +350,7 @@ const CoverGenerator: React.FC<CoverGeneratorProps> = ({
 
     } catch (error) {
       console.error("AI Cover CSS generation failed:", error);
-      alert("AI 样式生成失败，请检查网络连接。");
+      await dialog.alert("AI 样式生成失败，请检查网络连接。");
     } finally {
       setIsAiGenerating(false);
     }
@@ -534,8 +535,8 @@ const CoverGenerator: React.FC<CoverGeneratorProps> = ({
                             <button
                               onClick={() => toggleSnippetPopup(snippet)}
                               className={`w-full py-3 px-2 rounded-xl border transition-all flex flex-col items-center justify-center gap-2 ${isActive
-                                  ? 'bg-blue-600 border-blue-600 text-white shadow-lg shadow-blue-500/30'
-                                  : 'bg-white border-gray-100 text-gray-600 hover:border-blue-300 hover:text-blue-600 hover:shadow-md'
+                                ? 'bg-blue-600 border-blue-600 text-white shadow-lg shadow-blue-500/30'
+                                : 'bg-white border-gray-100 text-gray-600 hover:border-blue-300 hover:text-blue-600 hover:shadow-md'
                                 }`}
                             >
                               <Plus size={16} className={isActive ? 'text-blue-200' : 'text-gray-300'} />

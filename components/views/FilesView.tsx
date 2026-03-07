@@ -3,6 +3,7 @@ import { Settings2, Library, BookOpen, FileType, Cloud, X, ChevronUp, ChevronDow
 import { Chapter, ProjectData, ImageAsset, ExtraFile, Metadata } from '../../types';
 import { parseTxtToChapters } from '../../services/textParser';
 import { parseEpub } from '../../services/epubImport';
+import { dialog } from '../../services/dialog';
 
 interface FilesViewProps {
     onProjectUpdate: (updates: Partial<ProjectData>) => void;
@@ -25,9 +26,9 @@ const FilesView: React.FC<FilesViewProps> = ({ onProjectUpdate, onChaptersLoaded
 
     // --- Processing Logic (Extracted for reuse) ---
 
-    const processTxtFile = (file: File) => {
+    const processTxtFile = async (file: File) => {
         if (!file.name.toLowerCase().endsWith('.txt')) {
-            alert('请上传 .txt 格式的文件');
+            await dialog.alert('请上传 .txt 格式的文件');
             return;
         }
         onLoadingStart('正在解析 TXT 文件...');
@@ -66,7 +67,7 @@ const FilesView: React.FC<FilesViewProps> = ({ onProjectUpdate, onChaptersLoaded
                 }
             } catch (error) {
                 console.error(error);
-                alert('TXT 解析失败');
+                dialog.alert('TXT 解析失败');
             } finally {
                 onLoadingEnd();
             }
@@ -77,7 +78,7 @@ const FilesView: React.FC<FilesViewProps> = ({ onProjectUpdate, onChaptersLoaded
 
     const processEpubFile = async (file: File) => {
         if (!file.name.toLowerCase().endsWith('.epub')) {
-            alert('请上传 .epub 格式的文件');
+            await dialog.alert('请上传 .epub 格式的文件');
             return;
         }
         onLoadingStart('正在解析 EPUB 文件...');
@@ -96,16 +97,16 @@ const FilesView: React.FC<FilesViewProps> = ({ onProjectUpdate, onChaptersLoaded
             }
         } catch (error) {
             console.error("Failed to parse EPUB:", error);
-            alert(`EPUB 解析失败: ${error instanceof Error ? error.message : String(error)}`);
+            await dialog.alert(`EPUB 解析失败: ${error instanceof Error ? error.message : String(error)}`);
         } finally {
             onLoadingEnd();
         }
     };
 
-    const handleShowBatchOptions = (files: FileList | File[]) => {
+    const handleShowBatchOptions = async (files: FileList | File[]) => {
         const epubFiles = Array.from(files).filter(f => f.name.toLowerCase().endsWith('.epub'));
         if (epubFiles.length === 0) {
-            alert('请选择至少一个 .epub 文件');
+            await dialog.alert('请选择至少一个 .epub 文件');
             return;
         }
 
@@ -200,7 +201,7 @@ const FilesView: React.FC<FilesViewProps> = ({ onProjectUpdate, onChaptersLoaded
             }
         } catch (error) {
             console.error("Batch merge failed:", error);
-            alert(`批量合并失败: ${error instanceof Error ? error.message : String(error)}`);
+            await dialog.alert(`批量合并失败: ${error instanceof Error ? error.message : String(error)}`);
         } finally {
             onLoadingEnd();
         }

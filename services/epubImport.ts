@@ -151,12 +151,23 @@ export const parseEpub = async (file: File, options?: { imageStartId?: number; c
                 }
 
                 if (options?.cleanHtml) {
+                    // Smart paragraph conversion
+                    let htmlStr = chapterDoc.body.innerHTML;
+
+                    // Convert divs to p
+                    htmlStr = htmlStr.replace(/<div/gi, '<p').replace(/<\/div>/gi, '</p>');
+
+                    // Replace <br> with </p><p>
+                    htmlStr = htmlStr.replace(/<br\s*\/?>/gi, '</p><p>');
+
+                    // Wrap everything in a <p> to ensure stray text nodes are wrapped.
+                    // The browser's HTML5 parser will auto-correct nested and invalid <p> tags!
+                    chapterDoc.body.innerHTML = `<p>${htmlStr}</p>`;
+
                     // Remove scripts and styles completely
                     chapterDoc.querySelectorAll('script, style, link, meta').forEach(el => el.remove());
-                    // Remove purely visual/empty elements replacing with space or nothing
-                    chapterDoc.querySelectorAll('br').forEach(el => el.remove()); // Br is often abused for spacing
 
-                    // Unwrap spans (keep content but remove the span tag wrapper itself)
+                    // Unwrap spans (keep content but remove the span wrapper itself)
                     chapterDoc.querySelectorAll('span, font').forEach(el => {
                         const parent = el.parentNode;
                         if (parent) {
@@ -171,6 +182,15 @@ export const parseEpub = async (file: File, options?: { imageStartId?: number; c
                     chapterDoc.body.querySelectorAll('*').forEach(el => {
                         el.removeAttribute('style');
                         el.removeAttribute('class');
+                        el.removeAttribute('align');
+                    });
+
+                    // Clean up empty paragraphs created by the auto-correction
+                    chapterDoc.querySelectorAll('p').forEach(p => {
+                        // Keep if it has an image, otherwise if text is empty, remove it
+                        if (!p.textContent?.trim() && !p.querySelector('img')) {
+                            p.remove();
+                        }
                     });
                 }
 

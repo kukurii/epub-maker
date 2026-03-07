@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Chapter, ImageAsset } from '../types';
 import { ChevronUp, ChevronDown, Trash2, Plus, Search, ArrowDownToLine, Settings, X, Save, Hash, Eye, ImageMinus } from 'lucide-react';
+import { dialog } from '../services/dialog';
 
 interface DirectoryProps {
   chapters: Chapter[];
@@ -104,9 +105,9 @@ const Directory: React.FC<DirectoryProps> = ({
     }
   };
 
-  const handleMergeNext = (index: number) => {
+  const handleMergeNext = async (index: number) => {
     if (index >= chapters.length - 1) return;
-    if (!window.confirm(`确定要将 "${chapters[index].title}" 与下一章合并吗？`)) return;
+    if (!(await dialog.confirm(`确定要将 "${chapters[index].title}" 与下一章合并吗？`))) return;
 
     const current = chapters[index];
     const next = chapters[index + 1];
@@ -149,8 +150,8 @@ const Directory: React.FC<DirectoryProps> = ({
     onUpdateChapters(newChapters);
   };
 
-  const handleCleanInvalidImages = () => {
-    if (!window.confirm('确定要清理所有章节中引用已失效的图片吗？这不可恢复。')) return;
+  const handleCleanInvalidImages = async () => {
+    if (!(await dialog.confirm('确定要清理所有章节中引用已失效的图片吗？这不可恢复。'))) return;
 
     let totalRemoved = 0;
     const newChapters = chapters.map(chapter => {
@@ -179,9 +180,9 @@ const Directory: React.FC<DirectoryProps> = ({
 
     if (totalRemoved > 0) {
       onUpdateChapters(newChapters);
-      alert(`清理完成，共移除了 ${totalRemoved} 个失效图片引用。`);
+      await dialog.alert(`清理完成，共移除了 ${totalRemoved} 个失效图片引用。`);
     } else {
-      alert('没有发现失效的图片引用。');
+      await dialog.alert('没有发现失效的图片引用。');
     }
   };
 
@@ -191,17 +192,17 @@ const Directory: React.FC<DirectoryProps> = ({
     setEditFormData({ id: chapter.id, title: chapter.title });
   };
 
-  const saveEdit = () => {
+  const saveEdit = async () => {
     if (!editingChapter) return;
     const { id, title } = editFormData;
 
     if (!id.trim()) {
-      alert('ID 不能为空');
+      await dialog.alert('ID 不能为空');
       return;
     }
 
     if (id !== editingChapter.id && chapters.some(c => c.id === id)) {
-      alert('ID 已存在，请使用唯一的 ID');
+      await dialog.alert('ID 已存在，请使用唯一的 ID');
       return;
     }
 
@@ -300,6 +301,7 @@ const Directory: React.FC<DirectoryProps> = ({
                 className="flex-1 min-w-0 font-semibold text-sm truncate pr-2 select-none cursor-pointer"
                 title={chapterItem.title}
                 onClick={() => onSelectChapter(chapterItem.id)}
+                onDoubleClick={(e) => startEdit(e, chapterItem)}
               >
                 {chapterItem.title || '无标题章节'}
               </div>
@@ -434,6 +436,8 @@ const Directory: React.FC<DirectoryProps> = ({
                 className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 outline-none"
                 value={editFormData.title}
                 onChange={e => setEditFormData(prev => ({ ...prev, title: e.target.value }))}
+                autoFocus
+                onKeyDown={e => e.key === 'Enter' && saveEdit()}
               />
             </div>
 

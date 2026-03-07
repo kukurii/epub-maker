@@ -9,6 +9,7 @@ import LoadingOverlay from './components/LoadingOverlay';
 import ViewContainer from './components/ViewContainer';
 import { useProject } from './hooks/useProject';
 import { useAutoSave } from './hooks/useAutoSave';
+import GlobalDialogs from './components/ui/GlobalDialogs';
 
 const App: React.FC = () => {
   const [currentView, setCurrentView] = useState<ViewMode>('files');
@@ -147,6 +148,8 @@ const App: React.FC = () => {
 
         {/* Global Process Overlay */}
         {isProcessing && <LoadingOverlay message={processMessage} />}
+
+        <GlobalDialogs />
       </main>
     </div>
   );
