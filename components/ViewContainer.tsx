@@ -57,7 +57,8 @@ const ViewContainer: React.FC<ViewContainerProps> = ({
     case 'chapters':
       return (
         <div className="flex flex-1 h-full overflow-hidden relative">
-          <div className={`${activeChapterId ? 'hidden md:flex' : 'flex'} w-full md:w-auto h-full flex-col`}>
+        {/* 目录列表区：固定 w-80 宽度，移动端全宽且只在没有选中章节时显示 */}
+          <div className={`${activeChapterId ? 'hidden md:flex' : 'flex'} w-full md:w-80 h-full flex-col flex-shrink-0`}>
             <Directory
               chapters={project.chapters}
               images={project.images}
@@ -69,7 +70,7 @@ const ViewContainer: React.FC<ViewContainerProps> = ({
             />
           </div>
 
-          <div className={`${!activeChapterId ? 'hidden md:flex' : 'flex'} flex-1 h-full flex-col`}>
+          <div className={`${!activeChapterId ? 'hidden md:flex' : 'flex'} flex-1 h-full flex-col min-w-0`}>
             {activeChapter ? (
               <Editor
                 key={activeChapterId}
@@ -78,6 +79,7 @@ const ViewContainer: React.FC<ViewContainerProps> = ({
                 onSplitChapter={onSplitChapter}
                 project={project}
                 scrollToId={scrollToAnchor}
+                activeChapter={activeChapter}
                 onMobileBack={onMobileBack}
               />
             ) : (

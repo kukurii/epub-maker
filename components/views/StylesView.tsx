@@ -3,6 +3,12 @@ import { Sparkles, Loader2, Code, Settings, X, Key, Plus, ChevronDown, ChevronUp
 import { ProjectData, PRESET_STYLES, Chapter } from '../../types';
 import { GoogleGenAI } from '@google/genai';
 import { dialog } from '../../services/dialog';
+import { contentToEditorHTML } from '../editor/utils';
+
+const getEnvGeminiApiKey = () => {
+    const env = (import.meta as any).env || {};
+    return env.VITE_GEMINI_API_KEY || env.GEMINI_API_KEY || (globalThis as any).__GEMINI_API_KEY__ || '';
+};
 
 interface StylesViewProps {
     project: ProjectData;
@@ -201,7 +207,7 @@ const StylesView: React.FC<StylesViewProps> = ({ project, activeChapter, onUpdat
         if (!aiPrompt || isAiGenerating) return;
 
         // Prioritize user-provided key, fallback to env key
-        const apiKey = userApiKey || process.env.API_KEY;
+        const apiKey = userApiKey || getEnvGeminiApiKey();
 
         if (!apiKey) {
             await dialog.alert("请先点击设置按钮配置 Gemini API Key");
@@ -279,13 +285,21 @@ const StylesView: React.FC<StylesViewProps> = ({ project, activeChapter, onUpdat
     const activeStyle = PRESET_STYLES.find(s => s.id === project.activeStyleId);
 
     if (stylePreviewMode === 'chapter') {
-        previewContent = activeChapter ? activeChapter.content : `
+        previewContent = activeChapter 
+            ? contentToEditorHTML(activeChapter.content, project.images)
+            : `
         <h1>示例章节标题</h1>
         <p>这是一个预览段落。请选择一个章节以查看实际效果，或者在此查看默认样式的表现。</p>
         <p>这是第二段，用于展示段落间距或缩进效果。这里包含 <strong>加粗(Bold)</strong>、<em>斜体(Italic)</em>、<u>下划线</u> 和 <s>删除线</s>。</p>
         <p>这是一个 <a href="#">超链接样式示例</a>。</p>
         <blockquote>“这是一个引用块的示例文字。通常用于摘录或强调。”</blockquote>
         <hr/>
+        <p>下方是各种分割线示例：</p>
+        <hr class="divider-1"/>
+        <hr class="divider-2"/>
+        <hr class="divider-3"/>
+        <hr class="divider-4"/>
+        <hr class="divider-5"/>
         <p>下方是图片示例：</p>
         <div style="background:#eee;height:120px;display:flex;align-items:center;justify-content:center;color:#999;border:1px dashed #ccc;margin:1em 0;border-radius:4px;">[图片占位]</div>
         <p class="caption">图1.1 示例图片说明</p>

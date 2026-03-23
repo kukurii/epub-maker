@@ -5,6 +5,11 @@ import { Upload, Camera, Type, Check, Code, Loader2, Sparkles, Library, X, Chevr
 import { GoogleGenAI } from '@google/genai';
 import { dialog } from '../services/dialog';
 
+const getEnvGeminiApiKey = () => {
+  const env = (import.meta as any).env || {};
+  return env.VITE_GEMINI_API_KEY || env.GEMINI_API_KEY || (globalThis as any).__GEMINI_API_KEY__ || '';
+};
+
 interface CoverGeneratorProps {
   project: ProjectData;
   onUpdateCover: (dataUrl: string | null, coverId?: string | null) => void;
@@ -310,9 +315,15 @@ const CoverGenerator: React.FC<CoverGeneratorProps> = ({
   const handleAiGenerateCoverCss = async () => {
     if (!aiCoverPrompt || isAiGenerating) return;
 
+    const apiKey = getEnvGeminiApiKey();
+    if (!apiKey) {
+      await dialog.alert("AI 样式生成失败，请先配置 Gemini API Key。");
+      return;
+    }
+
     setIsAiGenerating(true);
     try {
-      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+      const ai = new GoogleGenAI({ apiKey });
       const fullPrompt = `
         You are an expert book cover designer. Generate CSS code to style a book cover based on the user's request.
         You should only provide CSS rules. Do not include explanations or markdown backticks.

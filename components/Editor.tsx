@@ -1,10 +1,21 @@
-import React, { useRef, useEffect, useState, useCallback, useMemo } from 'react';
+import React, { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import { AlignJustify, Clock } from 'lucide-react';
-import { ProjectData, PRESET_STYLES, ImageAsset, TocItem } from '../types';
+import { useEditor, EditorContent } from '@tiptap/react';
+import StarterKit from '@tiptap/starter-kit';
+import ImageExtension from '@tiptap/extension-image';
+import LinkExtension from '@tiptap/extension-link';
+import TextAlignExtension from '@tiptap/extension-text-align';
+import UnderlineExtension from '@tiptap/extension-underline';
+import { RubyMark } from './editor/extensions/RubyMark';
+import { CustomHeading } from './editor/extensions/CustomHeading';
+import { CustomHorizontalRule } from './editor/extensions/CustomHorizontalRule';
+import { ProjectData, PRESET_STYLES, TocItem, ImageAsset } from '../types';
 import EditorToolbar from './editor/EditorToolbar';
 import FindReplaceBar from './editor/FindReplaceBar';
 import ImageModal from './editor/ImageModal';
 import { dialog } from '../services/dialog';
+import { contentToEditorHTML, editorHTMLToContent, extractHeadingsToSubItems, calculateReadStats } from './editor/utils';
+import { useEditorSearch } from './editor/useEditorSearch';
 
 interface EditorProps {
   content: string;
@@ -13,58 +24,10 @@ interface EditorProps {
   project: ProjectData;
   scrollToId?: string | null;
   onMobileBack?: () => void;
+  activeChapter?: { title: string };
 }
 
-// --- Image Path Conversion Helpers ---
-
-const getUniqueImageFilename = (img: ImageAsset): string => {
-  if (!img) return 'unknown.jpg';
-  let ext = 'jpg';
-  if (img.type.includes('png')) ext = 'png';
-  else if (img.type.includes('gif')) ext = 'gif';
-  else if (img.type.includes('webp')) ext = 'webp';
-  return `img_${img.id}.${ext}`;
-};
-
-const contentToEditorHTML = (html: string, images: ImageAsset[]): string => {
-  if (!html) return html;
-  const parser = new DOMParser();
-  const doc = parser.parseFromString(html, 'text/html');
-  const imageMap = new Map<string, ImageAsset>(images.map(img => [img.id, img]));
-
-  doc.querySelectorAll('img[data-id]').forEach(imgEl => {
-    const id = imgEl.getAttribute('data-id');
-    if (id && imageMap.has(id)) {
-      imgEl.setAttribute('src', imageMap.get(id)!.data);
-      imgEl.classList.remove('image-missing');
-    } else {
-      imgEl.classList.add('image-missing');
-      const filename = imgEl.getAttribute('data-filename') || '未知图片';
-      imgEl.setAttribute('data-missing-name', filename);
-    }
-  });
-  return doc.body.innerHTML;
-};
-
-const editorHTMLToContent = (html: string, images: ImageAsset[]): string => {
-  if (!html || !images.length) return html;
-  const parser = new DOMParser();
-  const doc = parser.parseFromString(html, 'text/html');
-  const imageMap = new Map<string, ImageAsset>(images.map(img => [img.id, img]));
-
-  doc.querySelectorAll('img[data-id]').forEach(imgEl => {
-    const id = imgEl.getAttribute('data-id');
-    if (id && imageMap.has(id)) {
-      const image = imageMap.get(id)!;
-      const filename = getUniqueImageFilename(image);
-      imgEl.setAttribute('src', `images/${filename}`);
-    }
-  });
-  return doc.body.innerHTML;
-};
-
-
-const Editor: React.FC<EditorProps & { activeChapter?: { title: string } }> = ({
+const Editor: React.FC<EditorProps> = ({
   content,
   onContentChange,
   onSplitChapter,
@@ -73,397 +36,151 @@ const Editor: React.FC<EditorProps & { activeChapter?: { title: string } }> = ({
   activeChapter,
   onMobileBack
 }) => {
-  const editorRef = useRef<HTMLDivElement>(null);
-  const lastEmittedContentRef = useRef<string | null>(null);
-  const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const [showFindBar, setShowFindBar] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
   const [showImageModal, setShowImageModal] = useState(false);
-  const [findText, setFindText] = useState('');
-  const [replaceText, setReplaceText] = useState('');
   const [stats, setStats] = useState({ chars: 0, time: 0 });
 
-  // --- Search State ---
-  const [matches, setMatches] = useState<Range[]>([]);
-  const [currentMatchIndex, setCurrentMatchIndex] = useState(-1);
-  const [matchCase, setMatchCase] = useState(false);
-  const [wholeWord, setWholeWord] = useState(false);
-  const searchUpdateRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const editor = useEditor({
+    extensions: [
+      StarterKit.configure({
+        heading: false,
+        horizontalRule: false,
+      }),
+      CustomHeading.configure({
+        levels: [1, 2],
+        HTMLAttributes: {
+          class: 'heading',
+        },
+      }),
+      CustomHorizontalRule,
+      ImageExtension.configure({
+        inline: false,
+        HTMLAttributes: {
+          class: 'editor-image',
+        },
+      }),
+      LinkExtension.configure({
+        openOnClick: false,
+        autolink: true,
+      }),
+      UnderlineExtension,
+      TextAlignExtension.configure({
+        types: ['heading', 'paragraph'],
+      }),
+      RubyMark,
+    ],
+    content: contentToEditorHTML(content, project.images),
+    onCreate: ({ editor }) => {
+      setStats(calculateReadStats(editor.getText()));
+    },
+    onUpdate: ({ editor }) => {
+      const newEditorHTML = editor.getHTML();
+      const newContent = editorHTMLToContent(newEditorHTML, project.images);
+      setStats(calculateReadStats(editor.getText()));
 
-
-  // --- Scroll Logic ---
-  useEffect(() => {
-    if (scrollToId && editorRef.current) {
-      const element = editorRef.current.querySelector(`#${scrollToId}`);
-      if (element) {
-        element.scrollIntoView({ behavior: 'smooth', block: 'start' });
-        element.classList.add('bg-yellow-100', 'transition-colors', 'duration-1000');
-        setTimeout(() => element.classList.remove('bg-yellow-100'), 1500);
-      }
-    }
-  }, [scrollToId]);
-
-  // Clear debounce when unmounting
-  useEffect(() => {
-    return () => {
-      if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
-    };
-  }, []);
-
-  // Apply content on mount or switch
-  useEffect(() => {
-    if (editorRef.current) {
-      if (content === lastEmittedContentRef.current) {
-        return; // Skip if it's our own update bouncing back
-      }
-
-      if (debounceTimerRef.current) {
-        clearTimeout(debounceTimerRef.current);
-      }
-
-      const editorHTML = contentToEditorHTML(content, project.images);
-      if (editorRef.current.innerHTML !== editorHTML) {
-        editorRef.current.innerHTML = editorHTML;
-        updateStats(editorRef.current.textContent || '');
-      }
-    }
-  }, [content, project.images]);
-
-  // --- Stats Logic ---
-  const updateStats = (text: string) => {
-    const cleanText = text.replace(/\s+/g, '');
-    const chars = cleanText.length;
-    // Estimate reading time: 400 chars per minute
-    const time = Math.ceil(chars / 400);
-    setStats({ chars, time });
-  };
-
-  // --- Parsing & ID Generation ---
-  const generateId = (text: string) => {
-    return 'heading-' + Math.random().toString(36).substr(2, 9);
-  };
-
-  const processContentUpdates = useCallback(() => {
-    if (!editorRef.current) return;
-
-    const headings = editorRef.current.querySelectorAll('h1, h2');
-    const subItems: TocItem[] = [];
-
-    headings.forEach((el) => {
-      if (!el.id) {
-        el.id = generateId(el.textContent || '');
-      }
-
-      const text = (el.textContent || '').trim();
-
-      if (el.tagName === 'H1') {
-        subItems.push({
-          id: el.id,
-          text: text || '无标题',
-          level: 1
-        });
-      } else if (el.tagName === 'H2') {
-        subItems.push({
-          id: el.id,
-          text: text || '无标题',
-          level: 2
-        });
-      }
-    });
-
-    const newEditorHTML = editorRef.current.innerHTML;
-    const newContent = editorHTMLToContent(newEditorHTML, project.images);
-
-    lastEmittedContentRef.current = newContent;
-
-    updateStats(editorRef.current.textContent || '');
-    onContentChange(newContent, undefined, subItems); // explicitly pass undefined for title to not overwrite it
-  }, [onContentChange, project.images]);
-
-  const flushUpdates = () => {
-    if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
-    processContentUpdates();
-  };
-
-  // --- Missing Image Cleanup ---
-  useEffect(() => {
-    const el = editorRef.current;
-    if (!el) return;
-
-    const handleClick = async (e: MouseEvent) => {
-      const target = e.target as HTMLElement;
-      if (target.tagName === 'IMG' && target.classList.contains('image-missing')) {
-        e.preventDefault();
-        e.stopPropagation();
-        if (await dialog.confirm(`确认从文章中移除该失效图片引用吗？`)) {
-          target.remove();
-          flushUpdates();
+      let subItems: TocItem[] = [];
+      if (containerRef.current) {
+        const proseMirrorEl = containerRef.current.querySelector('.ProseMirror') as HTMLElement | null;
+        if (proseMirrorEl) {
+          subItems = extractHeadingsToSubItems(proseMirrorEl);
         }
       }
+
+      onContentChange(newContent, undefined, subItems);
+    },
+    editorProps: {
+      attributes: {
+        class: 'outline-none min-h-[600px] md:min-h-[900px] flex-1 ProseMirror',
+        spellcheck: 'false',
+      },
+    },
+  });
+
+  const searchProps = useEditorSearch(editor, content);
+
+  useEffect(() => {
+    if (!scrollToId || !containerRef.current) return;
+
+    const element = containerRef.current.querySelector(`#${scrollToId}`);
+    if (!element) return;
+
+    element.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    element.classList.add('bg-yellow-100', 'transition-colors', 'duration-1000');
+    setTimeout(() => element.classList.remove('bg-yellow-100'), 1500);
+  }, [scrollToId]);
+
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      const isMeta = event.ctrlKey || event.metaKey;
+
+      if (isMeta && event.key.toLowerCase() === 'f') {
+        event.preventDefault();
+        searchProps.setShowFindBar(true);
+        return;
+      }
+
+      if (isMeta && event.shiftKey && event.key.toLowerCase() === 'h') {
+        event.preventDefault();
+        searchProps.setShowFindBar(true);
+        return;
+      }
+
+      if (event.key === 'Escape' && searchProps.showFindBar) {
+        event.preventDefault();
+        searchProps.setShowFindBar(false);
+      }
     };
 
-    el.addEventListener('click', handleClick);
-    return () => el.removeEventListener('click', handleClick);
-  }, [flushUpdates]);
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [searchProps]);
 
-  const handleInput = () => {
-    if (!editorRef.current) return;
-    updateStats(editorRef.current.textContent || '');
+  const insertImage = useCallback((img: ImageAsset) => {
+    if (!editor) return;
 
-    if (debounceTimerRef.current) {
-      clearTimeout(debounceTimerRef.current);
-    }
-    debounceTimerRef.current = setTimeout(() => {
-      processContentUpdates();
-    }, 800);
-  };
-
-  // --- Commands ---
-  const execCmd = (command: string, value: string | undefined = undefined) => {
-    document.execCommand(command, false, value);
-    editorRef.current?.focus();
-    flushUpdates();
-  };
-
-  const getContainingBlock = (): HTMLElement | null => {
-    const selection = window.getSelection();
-    if (!selection?.rangeCount) return null;
-    let node = selection.getRangeAt(0).commonAncestorContainer;
-
-    if (node.nodeType !== Node.ELEMENT_NODE) {
-      node = node.parentNode!;
-    }
-    if (!node) return null;
-
-    while (node && node !== editorRef.current) {
-      const tagName = (node as Element).tagName;
-      if (['P', 'H1', 'H2', 'BLOCKQUOTE', 'LI', 'DIV'].includes(tagName)) {
-        return node as HTMLElement;
-      }
-      node = node.parentNode;
-    }
-    return null;
-  }
-
-  const toggleBlock = (tag: 'H1' | 'H2') => {
-    const currentBlock = getContainingBlock();
-    if (currentBlock && currentBlock.tagName === tag) {
-      execCmd('formatBlock', 'P');
-    } else {
-      execCmd('formatBlock', 'H1' === tag ? 'H1' : 'H2');
-    }
-  };
-
-  const toggleBlockquote = () => {
-    const currentBlock = getContainingBlock();
-    if (currentBlock && currentBlock.tagName === 'BLOCKQUOTE') {
-      execCmd('formatBlock', 'P');
-    } else {
-      execCmd('formatBlock', 'BLOCKQUOTE');
-    }
-  };
-
-  const toggleCaption = () => {
-    let currentBlock = getContainingBlock();
-    if (!currentBlock) return;
-
-    if (['H1', 'H2', 'BLOCKQUOTE'].includes(currentBlock.tagName)) {
-      execCmd('formatBlock', 'P');
-      currentBlock = getContainingBlock();
-    }
-
-    if (currentBlock) {
-      currentBlock.classList.toggle('caption');
-      flushUpdates();
-    }
-  };
-
-  const insertImage = (img: ImageAsset) => {
-    const html = `<img src="${img.data}" data-id="${img.id}" data-filename="${img.name}" alt="${img.name}" /><fy></fy>`;
-    editorRef.current?.focus();
-    execCmd('insertHTML', html);
+    editor.chain().focus().setImage({
+      src: img.data,
+      alt: img.name,
+      title: img.id,
+    }).run();
     setShowImageModal(false);
-  };
+  }, [editor]);
 
-  const handleSplit = async () => {
-    // Ensure IDs exist on content before splitting, as splitting logic depends on them for TOC
-    flushUpdates();
+  const handleSplit = useCallback(async () => {
+    if (!editor) return;
 
-    const selection = window.getSelection();
-    if (!selection || selection.rangeCount === 0 || !editorRef.current) {
-      await dialog.alert("请先点击编辑器内容，将光标放在要切分的位置。");
-      return;
-    }
-
-    const range = selection.getRangeAt(0);
-
-    if (!editorRef.current.contains(range.commonAncestorContainer)) {
-      editorRef.current.focus();
+    const { from } = editor.state.selection;
+    if (from === undefined || from <= 0) {
+      await dialog.alert('请先把光标放到需要拆分的位置。');
       return;
     }
 
     try {
-      const afterRange = range.cloneRange();
-      afterRange.selectNodeContents(editorRef.current);
-      afterRange.setStart(range.endContainer, range.endOffset);
+      const doc = editor.state.doc;
+      const beforeFragment = doc.slice(0, from);
+      const afterFragment = doc.slice(from, doc.content.size);
 
-      const afterFragment = afterRange.extractContents();
+      const { DOMSerializer } = await import('@tiptap/pm/model');
+      const serializer = DOMSerializer.fromSchema(editor.schema);
 
-      const div = document.createElement('div');
-      div.appendChild(afterFragment);
+      const beforeDocNode = editor.schema.nodes.doc.create(undefined, beforeFragment.content);
+      const afterDocNode = editor.schema.nodes.doc.create(undefined, afterFragment.content);
 
-      const beforeHtml = editorHTMLToContent(editorRef.current.innerHTML, project.images);
-      const afterHtml = editorHTMLToContent(div.innerHTML, project.images);
+      const beforeDiv = document.createElement('div');
+      beforeDiv.appendChild(serializer.serializeFragment(beforeDocNode.content));
 
-      if (!afterHtml && !beforeHtml) return;
+      const afterDiv = document.createElement('div');
+      afterDiv.appendChild(serializer.serializeFragment(afterDocNode.content));
+
+      const beforeHtml = editorHTMLToContent(beforeDiv.innerHTML, project.images);
+      const afterHtml = editorHTMLToContent(afterDiv.innerHTML, project.images);
 
       onSplitChapter(beforeHtml, afterHtml);
-    } catch (e) {
-      console.error("Split failed", e);
+    } catch (error) {
+      console.error('Split failed', error);
+      await dialog.alert('拆分失败，请重试。');
     }
-  };
-
-  // --- Robust Search & Highlight Logic ---
-
-  const clearHighlights = useCallback(() => {
-    if (!editorRef.current) return;
-    const marks = editorRef.current.querySelectorAll('mark.search-highlight');
-    marks.forEach(mark => {
-      const parent = mark.parentNode;
-      if (!parent) return;
-      while (mark.firstChild) {
-        parent.insertBefore(mark.firstChild, mark);
-      }
-      parent.removeChild(mark);
-      parent.normalize();
-    });
-  }, []);
-
-  const runSearch = useCallback((textToFind: string) => {
-    if (!editorRef.current || !textToFind) return [];
-
-    const textNodes: Text[] = [];
-    const walker = document.createTreeWalker(editorRef.current, NodeFilter.SHOW_TEXT);
-    while (walker.nextNode()) {
-      textNodes.push(walker.currentNode as Text);
-    }
-
-    const fullText = textNodes.map(n => n.nodeValue).join('');
-
-    const textToSearch = matchCase ? fullText : fullText.toLowerCase();
-    const pattern = matchCase ? textToFind : textToFind.toLowerCase();
-
-    const ranges: Range[] = [];
-    let startIndex = 0;
-    while ((startIndex = textToSearch.indexOf(pattern, startIndex)) > -1) {
-      const endIndex = startIndex + pattern.length;
-
-      // Whole Word Check
-      if (wholeWord) {
-        const prevChar = startIndex > 0 ? textToSearch[startIndex - 1] : ' ';
-        const nextChar = endIndex < textToSearch.length ? textToSearch[endIndex] : ' ';
-        const isWordChar = (c: string) => /[\w\u00C0-\u00FF]/.test(c);
-
-        if (isWordChar(prevChar) || isWordChar(nextChar)) {
-          startIndex += 1;
-          continue;
-        }
-      }
-
-      let charCount = 0;
-      let startNode, startOffset, endNode, endOffset;
-
-      for (const node of textNodes) {
-        const nodeLen = node.nodeValue!.length;
-        const currentEnd = charCount + nodeLen;
-
-        if (startNode === undefined && startIndex < currentEnd) {
-          startNode = node;
-          startOffset = startIndex - charCount;
-        }
-
-        if (endNode === undefined && endIndex <= currentEnd) {
-          endNode = node;
-          endOffset = endIndex - charCount;
-          break;
-        }
-        charCount += nodeLen;
-      }
-
-      if (startNode && endNode) {
-        const range = document.createRange();
-        range.setStart(startNode, startOffset!);
-        range.setEnd(endNode, endOffset!);
-        ranges.push(range);
-      }
-
-      startIndex += 1;
-    }
-    return ranges;
-  }, [matchCase, wholeWord]);
-
-  useEffect(() => {
-    if (searchUpdateRef.current) {
-      clearTimeout(searchUpdateRef.current);
-    }
-    searchUpdateRef.current = setTimeout(() => {
-      clearHighlights();
-      if (findText) {
-        const foundRanges = runSearch(findText);
-        setMatches(foundRanges);
-        if (foundRanges.length > 0) {
-          for (let i = foundRanges.length - 1; i >= 0; i--) {
-            try {
-              const mark = document.createElement('mark');
-              mark.className = 'search-highlight';
-              foundRanges[i].surroundContents(mark);
-            } catch (e) {
-              console.warn("Could not highlight range", foundRanges[i], e);
-            }
-          }
-          setCurrentMatchIndex(0);
-        } else {
-          setCurrentMatchIndex(-1);
-        }
-      } else {
-        setMatches([]);
-        setCurrentMatchIndex(-1);
-      }
-    }, 300);
-  }, [findText, content, runSearch, clearHighlights, matchCase, wholeWord]);
-
-  useEffect(() => {
-    if (!editorRef.current) return;
-    const allMarks = editorRef.current.querySelectorAll('.search-highlight');
-    allMarks.forEach((mark, index) => {
-      if (index === currentMatchIndex) {
-        if (!mark.classList.contains('search-highlight--current')) {
-          mark.classList.add('search-highlight--current');
-          mark.scrollIntoView({ behavior: 'smooth', block: 'center' });
-        }
-      } else {
-        mark.classList.remove('search-highlight--current');
-      }
-    });
-  }, [currentMatchIndex, matches]);
-
-  const navigateMatch = (direction: 'next' | 'prev') => {
-    if (matches.length === 0) return;
-    const nextIndex = direction === 'next'
-      ? (currentMatchIndex + 1) % matches.length
-      : (currentMatchIndex - 1 + matches.length) % matches.length;
-    setCurrentMatchIndex(nextIndex);
-  };
-
-  const handleReplace = () => {
-    if (currentMatchIndex === -1 || !editorRef.current) return;
-    const currentMark = editorRef.current.querySelector('.search-highlight--current');
-    if (currentMark) {
-      currentMark.textContent = replaceText;
-      const text = findText;
-      setFindText('');
-      setTimeout(() => setFindText(text), 50);
-    }
-  };
+  }, [editor, onSplitChapter, project.images]);
 
   const extraCSS = project.extraFiles
     ?.filter(f => f.type === 'css' && f.isActive !== false)
@@ -474,163 +191,243 @@ const Editor: React.FC<EditorProps & { activeChapter?: { title: string } }> = ({
     const activeStyle = PRESET_STYLES.find(s => s.id === project.activeStyleId) || PRESET_STYLES[0];
     const presetCss = project.isPresetStyleActive !== false ? activeStyle.css : 'body {}';
 
+    const scopeCSS = (css: string) => css
+      .replace(/body\s*{[^}]*}/, '')
+      .replace(/(^|})\s*([a-z0-9][a-z0-9\-_]*|\.[a-z0-9][a-z0-9\-_]*)/gi, '$1 .editor-paper $2');
+
     return `
     .editor-paper {
-       ${presetCss.match(/body\s*{([^}]*)}/)?.[1] || ''}
+      ${presetCss.match(/body\s*{([^}]*)}/)?.[1] || ''}
     }
-    ${presetCss
-        .replace(/body\s*{[^}]*}/, '')
-        .replace(/(^|\})\s*([a-z0-9]+)/gi, '$1 .editor-paper $2')
-      }
-    ${project.customCSS.replace(/(^|\})\s*([a-z0-9]+)/gi, '$1 .editor-paper $2')}
-    
-    /* Extra Files CSS (Scoped naively) */
-    ${extraCSS.replace(/(^|\})\s*([a-z0-9\.\-\_]+)/gi, '$1 .editor-paper $2')}
-    
+    ${scopeCSS(presetCss)}
+    ${scopeCSS(project.customCSS)}
+    ${scopeCSS(extraCSS)}
+
+    .editor-paper hr {
+      border: none;
+      border-top: 1px solid #ccc;
+      margin: 2em auto;
+      width: 100%;
+      position: relative;
+    }
+    .editor-paper hr.divider-1:after {
+      content: '* * *';
+      display: block;
+      text-align: center;
+      font-size: 1.2em;
+      color: #888;
+      margin-top: -0.7em;
+      background: white;
+      padding: 0 0.5em;
+    }
+    .editor-paper hr.divider-2:after {
+      content: '◈ ◈ ◈';
+      display: block;
+      text-align: center;
+      font-size: 1em;
+      color: #999;
+      margin-top: -0.7em;
+      background: white;
+      padding: 0 0.5em;
+    }
+    .editor-paper hr.divider-3:after {
+      content: '❀ ✿ ❀';
+      display: block;
+      text-align: center;
+      font-size: 1em;
+      color: #aaa;
+      margin-top: -0.7em;
+      background: white;
+      padding: 0 0.5em;
+    }
+    .editor-paper hr.divider-4:after {
+      content: '• • •';
+      display: block;
+      text-align: center;
+      font-size: 1.2em;
+      color: #999;
+      margin-top: -0.7em;
+      background: white;
+      padding: 0 0.5em;
+    }
+    .editor-paper hr.divider-5:after {
+      content: '～～～';
+      display: block;
+      text-align: center;
+      font-size: 1em;
+      color: #bbb;
+      margin-top: -0.7em;
+      background: white;
+      padding: 0 0.5em;
+    }
+
+    .editor-paper .ProseMirror {
+      outline: none !important;
+      min-height: 100%;
+      height: 100%;
+      caret-color: #3b82f6;
+    }
+
+    .editor-paper p.caption {
+      text-indent: 0;
+      text-align: center;
+      font-size: 0.9em;
+      color: #6b7280;
+      margin-top: -0.5em;
+      margin-bottom: 1.5em;
+    }
+
     .editor-paper img {
-        cursor: pointer;
-        transition: all 0.2s ease-in-out;
+      cursor: pointer;
+      transition: all 0.2s ease-in-out;
+      max-width: 100%;
+      height: auto;
     }
-    .editor-paper img:hover {
-        outline: 3px solid rgba(59, 130, 246, 0.5);
-        outline-offset: 2px;
-        box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+    .editor-paper img.ProseMirror-selectednode {
+      outline: 3px solid rgba(59, 130, 246, 0.8);
+      outline-offset: 2px;
+      box-shadow: 0 4px 15px rgba(0,0,0,0.1);
     }
-    .editor-paper .search-highlight {
-      background-color: #fef08a; /* yellow-200 */
-      border-radius: 2px;
-      transition: background-color 0.3s;
-    }
-    .editor-paper .search-highlight--current {
-      background-color: #f97316; /* orange-600 */
-      color: white;
-    }
-    
-    /* → 隐藏分页标记，但保留分页功能 */
+
     .editor-paper fy {
       display: none;
       page-break-after: always;
       break-after: page;
     }
 
-    /* Missing Image Placeholder */
     .editor-paper .image-missing {
-        display: block;
-        width: 100%;
-        max-width: 400px;
-        min-height: 80px;
-        background: #FEF2F2 !important;
-        border: 2px dashed #EF4444 !important;
-        border-radius: 12px !important;
-        position: relative;
-        margin: 1.5rem auto;
-        cursor: pointer;
-        transition: all 0.2s;
+      display: block;
+      width: 100%;
+      max-width: 400px;
+      min-height: 80px;
+      background: #FEF2F2 !important;
+      border: 2px dashed #EF4444 !important;
+      border-radius: 12px !important;
+      position: relative;
+      margin: 1.5rem auto;
+      cursor: pointer;
+      transition: all 0.2s;
     }
     .editor-paper .image-missing:hover {
-        background: #FEE2E2 !important;
-        transform: scale(1.02);
+      background: #FEE2E2 !important;
+      transform: scale(1.02);
     }
     .editor-paper .image-missing::before {
-        content: '🚫 图片已删除: ' attr(data-missing-name);
-        position: absolute;
-        inset: 0;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        color: #B91C1C;
-        font-size: 14px;
-        font-weight: 600;
-        padding-bottom: 20px;
+      content: '图片已删除: ' attr(data-missing-name);
+      display: block;
+      padding: 1.75rem 1rem;
+      color: #dc2626;
+      text-align: center;
+      font-size: 0.95rem;
+      font-weight: 600;
     }
-    .editor-paper .image-missing::after {
-        content: '此引用已失效，点击一键移除';
-        position: absolute;
-        bottom: 15px;
-        left: 0;
-        right: 0;
-        text-align: center;
-        font-size: 11px;
-        color: #EF4444;
-        font-weight: 500;
-    }
-  `}, [project.activeStyleId, project.customCSS, extraCSS, project.isPresetStyleActive]);
+  `;
+  }, [project.activeStyleId, project.customCSS, extraCSS, project.isPresetStyleActive]);
 
-  const chapterTitle = useMemo(() => {
-    return project.chapters.find(c => c.id === scrollToId)?.title || activeChapter?.title || 'Untitled';
-  }, [project.chapters, scrollToId]);
+  const chapterTitle = useMemo(() => activeChapter?.title || 'Untitled', [activeChapter]);
+
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el || !editor) return;
+
+    const handleClick = async (e: MouseEvent) => {
+      const target = e.target as HTMLElement;
+      if (target.tagName === 'IMG' && target.classList.contains('image-missing')) {
+        e.preventDefault();
+        e.stopPropagation();
+        if (await dialog.confirm('确认从文章中移除这个失效图片引用吗？')) {
+          target.remove();
+          const freshHTML = el.querySelector('.ProseMirror')?.innerHTML || '';
+          editor.commands.setContent(freshHTML, { emitUpdate: true });
+        }
+      }
+    };
+
+    el.addEventListener('click', handleClick);
+    return () => el.removeEventListener('click', handleClick);
+  }, [editor]);
 
   return (
-    <div className="flex flex-col h-full bg-[#F9FAFB] relative overflow-hidden">
-
+    <div className="flex flex-col h-full bg-[#F9FAFB] relative overflow-hidden min-w-0">
       <EditorToolbar
+        editor={editor}
         onMobileBack={onMobileBack}
-        execCmd={execCmd}
-        toggleBlock={toggleBlock}
-        toggleBlockquote={toggleBlockquote}
-        toggleCaption={toggleCaption}
         handleSplit={handleSplit}
         setShowImageModal={setShowImageModal}
-        showFindBar={showFindBar}
-        setShowFindBar={setShowFindBar}
+        showFindBar={searchProps.showFindBar}
+        setShowFindBar={searchProps.setShowFindBar}
       />
 
-      {showFindBar && (
+      {searchProps.showFindBar && (
         <FindReplaceBar
-          findText={findText} setFindText={setFindText}
-          replaceText={replaceText} setReplaceText={setReplaceText}
-          matchCase={matchCase} setMatchCase={setMatchCase}
-          wholeWord={wholeWord} setWholeWord={setWholeWord}
-          matchesCount={matches.length}
-          currentMatchIndex={currentMatchIndex}
-          onNavigateNext={() => navigateMatch('next')}
-          onNavigatePrev={() => navigateMatch('prev')}
-          onReplace={handleReplace}
-          onClose={() => setShowFindBar(false)}
+          findText={searchProps.findText}
+          setFindText={searchProps.setFindText}
+          replaceText={searchProps.replaceText}
+          setReplaceText={searchProps.setReplaceText}
+          matchCase={searchProps.matchCase}
+          setMatchCase={searchProps.setMatchCase}
+          wholeWord={searchProps.wholeWord}
+          setWholeWord={searchProps.setWholeWord}
+          matchesCount={searchProps.matches.length}
+          currentMatchIndex={searchProps.currentMatchIndex}
+          onNavigateNext={() => searchProps.navigateMatch('next')}
+          onNavigatePrev={() => searchProps.navigateMatch('prev')}
+          onReplace={searchProps.handleReplace}
+          onReplaceAll={searchProps.handleReplaceAll}
+          onClose={() => searchProps.setShowFindBar(false)}
         />
       )}
 
-      {/* Editor Content Area */}
       <div className="flex-1 overflow-y-auto bg-slate-50 p-2 md:p-8 scroll-smooth pb-20">
         <div
+          ref={containerRef}
           className="relative mx-auto w-full max-w-[800px] bg-white ring-1 ring-gray-900/5 shadow-xl min-h-[900px] md:min-h-[1100px] p-6 md:p-16 cursor-text transition-all rounded-xl flex flex-col"
-          onClick={(e) => {
-            // Only focus if they click in the empty space, not on a specific element that needs native handling
-            if (e.target === e.currentTarget && editorRef.current) {
-              editorRef.current.focus();
+          onMouseDown={(e) => {
+            if (!editor) return;
 
-              // Attempt to put cursor at the very end of the document if empty
-              if (!editorRef.current.textContent?.trim()) {
-                const selection = window.getSelection();
-                const range = document.createRange();
-                range.selectNodeContents(editorRef.current);
-                range.collapse(false);
-                selection?.removeAllRanges();
-                selection?.addRange(range);
-              }
+            const target = e.target as HTMLElement;
+            if (
+              target.closest('.ProseMirror') ||
+              target.closest('img') ||
+              target.closest('a') ||
+              target.closest('button') ||
+              target.closest('input') ||
+              target.closest('textarea')
+            ) {
+              return;
             }
+
+            e.preventDefault();
+            editor.commands.focus('end');
           }}
         >
-          {/* Visual Chapter Title Hint - Non-Editable */}
           <div className="absolute top-4 right-4 md:top-12 md:right-12 text-gray-400 font-serif text-sm md:text-lg opacity-30 select-none pointer-events-none transition-all">
             《{chapterTitle}》
           </div>
 
           <style>{scopedCSS}</style>
-          <div className="editor-paper outline-none flex-1 flex flex-col cursor-text" onClick={() => editorRef.current?.focus()}>
-            <div
-              ref={editorRef}
-              contentEditable
-              className="outline-none min-h-[600px] md:min-h-[900px] flex-1"
-              onInput={handleInput}
-              suppressContentEditableWarning
-              data-placeholder="在此输入内容..."
-            />
+
+          <div
+            className="editor-paper outline-none flex-1 flex flex-col cursor-text relative"
+            onMouseDown={(e) => {
+              if (!editor) return;
+              if (e.target === e.currentTarget) {
+                e.preventDefault();
+                editor.commands.focus('end');
+              }
+            }}
+          >
+            {editor?.isEmpty && (
+              <div className="absolute left-0 right-0 top-1 text-gray-300 pointer-events-none select-none text-sm md:text-base leading-7">
+                在这里开始写作。支持标题、图注、图片、注音和查找替换。
+                <span className="block mt-2 text-xs md:text-sm">快捷键：`Ctrl/Cmd + F` 打开查找，`Shift + Enter` 在查找框中反向跳转。</span>
+              </div>
+            )}
+            <EditorContent editor={editor} className="flex-1 min-h-[600px] md:min-h-[900px]" />
           </div>
         </div>
       </div>
 
-      {/* Status Footer */}
       <div className="flex-none h-10 bg-white border-t border-gray-100 flex items-center justify-center md:justify-between px-4 md:px-6 text-xs text-gray-500 select-none z-20">
         <div className="flex items-center space-x-3 md:space-x-6">
           <span className="flex items-center font-medium text-gray-400">

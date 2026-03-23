@@ -125,8 +125,8 @@ export const generateEpub = async (project: ProjectData) => {
 
         const images = doc.querySelectorAll('img');
         images.forEach(img => {
-            const id = img.getAttribute('data-id');
-            const filename = img.getAttribute('data-filename');
+            const id = img.getAttribute('data-id') || img.getAttribute('title');
+            const filename = img.getAttribute('data-filename') || img.getAttribute('alt');
 
             let uniqueName = null;
 
@@ -138,6 +138,8 @@ export const generateEpub = async (project: ProjectData) => {
 
             if (uniqueName) {
                 img.setAttribute('src', `images/${uniqueName}`);
+                if (id) img.setAttribute('data-id', id);
+                if (filename) img.setAttribute('data-filename', filename);
             }
         });
 
