@@ -489,17 +489,45 @@ const CoverGenerator: React.FC<CoverGeneratorProps> = ({
                 </button>
               </div>
 
-              {showTextOnCover && (
-                <div className="flex items-center justify-between p-3 bg-blue-50/50 rounded-xl border border-blue-100">
-                  <div className="flex flex-col">
-                    <span className="text-xs font-bold text-gray-700">显示系列丛书</span>
-                    {!project.metadata.series && <span className="text-[10px] text-gray-400 flex items-center mt-0.5"><Info size={10} className="mr-1" /> 需在“书籍信息”中填写</span>}
+               {showTextOnCover && (
+                <>
+                  {/* 标题大小调整滑块 */}
+                  <div className="p-3 bg-purple-50/50 rounded-xl border border-purple-100 space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold text-gray-700">标题大小</span>
+                      <span className="text-xs font-mono text-purple-600 font-bold">{project.coverDesign?.fontSizeTitle ?? 48}px</span>
+                    </div>
+                    <input
+                      type="range"
+                      min={16}
+                      max={96}
+                      step={2}
+                      value={project.coverDesign?.fontSizeTitle ?? 48}
+                      onChange={(e) => {
+                        if (onUpdateCoverDesign && project.coverDesign) {
+                          onUpdateCoverDesign({ ...project.coverDesign, fontSizeTitle: Number(e.target.value) });
+                        }
+                      }}
+                      className="w-full h-1.5 bg-purple-200 rounded-lg appearance-none cursor-pointer accent-purple-600"
+                    />
+                    <div className="flex justify-between text-[10px] text-gray-400">
+                      <span>小 16px</span>
+                      <span>大 96px</span>
+                    </div>
                   </div>
-                  <label className="relative inline-flex items-center cursor-pointer">
-                    <input type="checkbox" className="sr-only peer" checked={project.coverDesign?.showSeries || false} onChange={handleToggleSeries} disabled={!project.metadata.series} />
-                    <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
-                  </label>
-                </div>
+
+                  {/* 显示系列丛书 */}
+                  <div className="flex items-center justify-between p-3 bg-blue-50/50 rounded-xl border border-blue-100">
+                    <div className="flex flex-col">
+                      <span className="text-xs font-bold text-gray-700">显示系列丛书</span>
+                      {!project.metadata.series && <span className="text-[10px] text-gray-400 flex items-center mt-0.5"><Info size={10} className="mr-1" /> 需在“书籍信息”中填写</span>}
+                    </div>
+                    <label className="relative inline-flex items-center cursor-pointer">
+                      <input type="checkbox" className="sr-only peer" checked={project.coverDesign?.showSeries || false} onChange={handleToggleSeries} disabled={!project.metadata.series} />
+                      <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+                    </label>
+                  </div>
+                </>
               )}
             </div>
 
@@ -665,7 +693,7 @@ const CoverGenerator: React.FC<CoverGeneratorProps> = ({
                     {project.metadata.series}
                   </div>
                 )}
-                <h1 id="cover-title" className={`text-4xl font-bold mb-6 break-words w-full z-10 ${currentTemplate.text} ${currentTemplate.font} leading-tight`}>
+                <h1 id="cover-title" className={`font-bold mb-6 break-words w-full z-10 ${currentTemplate.text} ${currentTemplate.font} leading-tight`} style={{ fontSize: `${project.coverDesign?.fontSizeTitle ?? 48}px` }}>
                   {project.metadata.title || "Book Title"}
                 </h1>
                 <div className={`w-16 h-1 mb-8 z-10 ${currentTemplate.text === 'text-white' ? 'bg-white/80' : 'bg-gray-800/80'}`}></div>

@@ -15,12 +15,19 @@ interface ViewContainerProps {
   project: ProjectData;
   activeChapterId: string | null;
   activeChapter: Chapter | undefined;
-  scrollToAnchor: string | null;
+  editorFocusRequest: {
+    anchorId?: string | null;
+    searchText?: string | null;
+    imageId?: string | null;
+    key: number;
+  } | null;
   // Actions
   onUpdateProject: (updates: Partial<ProjectData>) => void;
   onUpdateChapters: (chapters: Chapter[]) => void;
   onSelectChapter: (id: string) => void;
   onScrollToAnchor: (chapterId: string, anchorId: string) => void;
+  onFocusSearchText: (chapterId: string, searchText: string) => void;
+  onFocusImageReference: (chapterId: string, imageId: string) => void;
   onUpdateChapterContent: (newContent: string, newTitle?: string, subItems?: TocItem[]) => void;
   onSplitChapter: (before: string, after: string) => void;
   onChaptersLoaded: (chapters: Chapter[], firstId: string) => void;
@@ -34,11 +41,13 @@ const ViewContainer: React.FC<ViewContainerProps> = ({
   project,
   activeChapterId,
   activeChapter,
-  scrollToAnchor,
+  editorFocusRequest,
   onUpdateProject,
   onUpdateChapters,
   onSelectChapter,
   onScrollToAnchor,
+  onFocusSearchText,
+  onFocusImageReference,
   onUpdateChapterContent,
   onSplitChapter,
   onChaptersLoaded,
@@ -65,6 +74,7 @@ const ViewContainer: React.FC<ViewContainerProps> = ({
               currentChapterId={activeChapterId}
               onSelectChapter={onSelectChapter}
               onScrollToAnchor={onScrollToAnchor}
+              onFocusSearchText={onFocusSearchText}
               onUpdateChapters={onUpdateChapters}
               className="w-full md:w-80"
             />
@@ -78,7 +88,7 @@ const ViewContainer: React.FC<ViewContainerProps> = ({
                 onContentChange={onUpdateChapterContent}
                 onSplitChapter={onSplitChapter}
                 project={project}
-                scrollToId={scrollToAnchor}
+                focusRequest={editorFocusRequest}
                 activeChapter={activeChapter}
                 onMobileBack={onMobileBack}
               />
@@ -96,7 +106,14 @@ const ViewContainer: React.FC<ViewContainerProps> = ({
     case 'styles':
       return <StylesView project={project} activeChapter={activeChapter} onUpdateProject={onUpdateProject} />;
     case 'images':
-      return <ImagesView images={project.images} onUpdateImages={(images) => onUpdateProject({ images })} />;
+      return (
+        <ImagesView
+          images={project.images}
+          chapters={project.chapters}
+          onUpdateImages={(images) => onUpdateProject({ images })}
+          onLocateUsage={onFocusImageReference}
+        />
+      );
     case 'cover':
       return <CoverGenerator
         project={project}

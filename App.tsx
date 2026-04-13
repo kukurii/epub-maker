@@ -4,23 +4,27 @@ import Sidebar from './components/Sidebar';
 import { generateEpub } from './services/epubExport';
 import { Menu, PowerOff, Cloud, CheckCircle2, AlertTriangle } from 'lucide-react';
 
-// New Components & Hooks
 import LoadingOverlay from './components/LoadingOverlay';
 import ViewContainer from './components/ViewContainer';
 import { useProject } from './hooks/useProject';
 import { useAutoSave } from './hooks/useAutoSave';
 import GlobalDialogs from './components/ui/GlobalDialogs';
 
+interface EditorFocusRequest {
+  anchorId?: string | null;
+  searchText?: string | null;
+  imageId?: string | null;
+  key: number;
+}
+
 const App: React.FC = () => {
   const [currentView, setCurrentView] = useState<ViewMode>('files');
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  const [scrollToAnchor, setScrollToAnchor] = useState<string | null>(null);
+  const [editorFocusRequest, setEditorFocusRequest] = useState<EditorFocusRequest | null>(null);
 
-  // Loading state for long-running operations (like imports)
   const [isProcessing, setIsProcessing] = useState(false);
   const [processMessage, setProcessMessage] = useState('');
 
-  // Business Logic Hooks
   const {
     project,
     activeChapterId,
@@ -36,8 +40,6 @@ const App: React.FC = () => {
 
   const { saveStatus, autoSaveEnabled, toggleAutoSave, clearStorage } = useAutoSave(project, isLoaded);
 
-  // --- Handlers ---
-
   const handleReset = () => {
     clearStorage();
     window.location.reload();
@@ -46,14 +48,52 @@ const App: React.FC = () => {
   const handleSelectChapter = (id: string) => {
     if (id === activeChapterId) return;
     setActiveChapterId(id);
-    setScrollToAnchor(null);
+    setEditorFocusRequest(null);
   };
 
   const handleScrollToAnchor = (chapterId: string, anchorId: string) => {
+    setCurrentView('chapters');
     if (activeChapterId !== chapterId) {
       setActiveChapterId(chapterId);
     }
-    setTimeout(() => setScrollToAnchor(anchorId), 50);
+    setTimeout(() => {
+      setEditorFocusRequest({
+        anchorId,
+        searchText: null,
+        imageId: null,
+        key: Date.now(),
+      });
+    }, 50);
+  };
+
+  const handleFocusSearchText = (chapterId: string, searchText: string) => {
+    setCurrentView('chapters');
+    if (activeChapterId !== chapterId) {
+      setActiveChapterId(chapterId);
+    }
+    setTimeout(() => {
+      setEditorFocusRequest({
+        anchorId: null,
+        searchText,
+        imageId: null,
+        key: Date.now(),
+      });
+    }, 50);
+  };
+
+  const handleFocusImageReference = (chapterId: string, imageId: string) => {
+    setCurrentView('chapters');
+    if (activeChapterId !== chapterId) {
+      setActiveChapterId(chapterId);
+    }
+    setTimeout(() => {
+      setEditorFocusRequest({
+        anchorId: null,
+        searchText: null,
+        imageId,
+        key: Date.now(),
+      });
+    }, 50);
   };
 
   const handleChaptersLoaded = (chapters: any[], firstChapterId: string) => {
@@ -86,7 +126,6 @@ const App: React.FC = () => {
       />
 
       <main className="flex-1 flex flex-col h-full overflow-hidden relative">
-        {/* Mobile Header */}
         <div className="md:hidden flex items-center justify-between h-14 bg-white border-b border-gray-200 px-4 flex-none z-30">
           <div className="flex items-center">
             <button onClick={() => setMobileMenuOpen(true)} className="p-2 -ml-2 text-gray-600 hover:bg-gray-100 rounded-lg">
@@ -96,18 +135,19 @@ const App: React.FC = () => {
           </div>
         </div>
 
-        {/* View Container */}
         <div className="flex-1 flex flex-col h-full overflow-hidden relative">
           <ViewContainer
             currentView={currentView}
             project={project}
             activeChapterId={activeChapterId}
             activeChapter={activeChapter}
-            scrollToAnchor={scrollToAnchor}
+            editorFocusRequest={editorFocusRequest}
             onUpdateProject={updateProject}
             onUpdateChapters={updateChapters}
             onSelectChapter={handleSelectChapter}
             onScrollToAnchor={handleScrollToAnchor}
+            onFocusSearchText={handleFocusSearchText}
+            onFocusImageReference={handleFocusImageReference}
             onUpdateChapterContent={updateChapterContent}
             onSplitChapter={splitChapter}
             onChaptersLoaded={handleChaptersLoaded}
@@ -117,11 +157,10 @@ const App: React.FC = () => {
           />
         </div>
 
-        {/* Global Save Indicator */}
         <button
           onClick={toggleAutoSave}
           className="absolute bottom-4 right-4 z-50 transition-transform active:scale-95 focus:outline-none"
-          title={autoSaveEnabled ? "点击关闭自动保存" : "点击开启自动保存"}
+          title={autoSaveEnabled ? '点击关闭自动保存' : '点击开启自动保存'}
         >
           {!autoSaveEnabled ? (
             <div className="flex items-center text-xs text-gray-500 bg-gray-100/80 backdrop-blur-md py-1.5 px-3 rounded-full shadow-md border border-gray-200 hover:bg-gray-200/80">
@@ -146,7 +185,6 @@ const App: React.FC = () => {
           )}
         </button>
 
-        {/* Global Process Overlay */}
         {isProcessing && <LoadingOverlay message={processMessage} />}
 
         <GlobalDialogs />

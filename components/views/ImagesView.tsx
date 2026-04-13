@@ -1,13 +1,16 @@
-import React, { useState, useRef } from 'react';
-import { Trash2, UploadCloud, Image as ImageIcon, FileText, CheckCircle2, Circle } from 'lucide-react';
-import { ImageAsset } from '../../types';
+import React, { useMemo, useRef, useState } from 'react';
+import { Trash2, UploadCloud, Image as ImageIcon, FileText, CheckCircle2, Circle, LocateFixed, Link2 } from 'lucide-react';
+import { Chapter, ImageAsset } from '../../types';
+import { analyzeImageUsages } from '../../services/bookAnalysis';
+import { dialog } from '../../services/dialog';
 
 interface ImagesViewProps {
   images: ImageAsset[];
+  chapters: Chapter[];
   onUpdateImages: (images: ImageAsset[]) => void;
+  onLocateUsage: (chapterId: string, imageId: string) => void;
 }
 
-// --- Helper Functions ---
 const formatBytes = (bytes: number, decimals = 2) => {
   if (bytes === 0) return '0 Bytes';
   const k = 1024;
@@ -28,7 +31,7 @@ const getImageDetails = (file: File): Promise<Omit<ImageAsset, 'id'>> => {
           name: file.name,
           data: dataUrl,
           type: file.type,
-          dimensions: `${img.naturalWidth} × ${img.naturalHeight}`,
+          dimensions: `${img.naturalWidth} x ${img.naturalHeight}`,
           size: file.size,
         });
       };
@@ -40,22 +43,24 @@ const getImageDetails = (file: File): Promise<Omit<ImageAsset, 'id'>> => {
   });
 };
 
-
-// --- Components ---
-
 const ImageCard: React.FC<{
   image: ImageAsset;
   onDelete: (id: string) => void;
   isSelected: boolean;
   onToggleSelect: (id: string) => void;
   selectionMode: boolean;
-}> = ({ image, onDelete, isSelected, onToggleSelect, selectionMode }) => (
+  usageCount: number;
+  isActive: boolean;
+  onActivate: (id: string) => void;
+}> = ({ image, onDelete, isSelected, onToggleSelect, selectionMode, usageCount, isActive, onActivate }) => (
   <div
-    onClick={() => selectionMode && onToggleSelect(image.id)}
+    onClick={() => selectionMode ? onToggleSelect(image.id) : onActivate(image.id)}
     className={`relative group bg-white p-2 rounded-2xl border transition-all duration-300 ${isSelected
       ? 'border-blue-500 shadow-md ring-2 ring-blue-500/20'
-      : 'border-gray-100 shadow-sm hover:shadow-lg hover:-translate-y-1'
-      } ${selectionMode ? 'cursor-pointer' : ''}`}
+      : isActive
+        ? 'border-indigo-300 shadow-md ring-2 ring-indigo-200'
+        : 'border-gray-100 shadow-sm hover:shadow-lg hover:-translate-y-1'
+      } ${selectionMode ? 'cursor-pointer' : 'cursor-pointer'}`}
   >
     <div className={`aspect-square bg-gray-50 rounded-xl mb-2 flex items-center justify-center overflow-hidden transition-all ${isSelected ? 'opacity-90' : ''}`}>
       <img src={image.data} alt={image.name} className="object-contain w-full h-full" />
@@ -68,9 +73,11 @@ const ImageCard: React.FC<{
         <span className="mx-1.5">·</span>
         <FileText size={10} className="mr-1" /> {formatBytes(image.size)}
       </div>
+      <div className="mt-1 text-[10px] text-white/90 flex items-center">
+        <Link2 size={10} className="mr-1" /> {usageCount} 章引用
+      </div>
     </div>
 
-    {/* Selection Checkbox */}
     {selectionMode && (
       <div className="absolute top-3 left-3 z-10 drop-shadow-md">
         {isSelected ? (
@@ -81,7 +88,6 @@ const ImageCard: React.FC<{
       </div>
     )}
 
-    {/* Single Delete Button */}
     {!selectionMode && (
       <button
         onClick={(e) => { e.stopPropagation(); onDelete(image.id); }}
@@ -99,13 +105,16 @@ const SkeletonCard: React.FC = () => (
   </div>
 );
 
-
-const ImagesView: React.FC<ImagesViewProps> = ({ images, onUpdateImages }) => {
+const ImagesView: React.FC<ImagesViewProps> = ({ images, chapters, onUpdateImages, onLocateUsage }) => {
   const [dragActive, setDragActive] = useState(false);
   const [loadingFiles, setLoadingFiles] = useState<string[]>([]);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [isSelectionMode, setIsSelectionMode] = useState(false);
+  const [activeImageId, setActiveImageId] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const imageUsages = useMemo(() => analyzeImageUsages(chapters, images), [chapters, images]);
+  const activeUsage = imageUsages.find(item => item.image.id === activeImageId) || imageUsages[0] || null;
 
   const processFiles = async (files: FileList | File[]) => {
     const imageFiles = Array.from(files).filter(file => file.type.startsWith('image/'));
@@ -116,7 +125,6 @@ const ImagesView: React.FC<ImagesViewProps> = ({ images, onUpdateImages }) => {
 
     const rawAssets = await Promise.all(imageFiles.map(getImageDetails));
 
-    // Calculate max ID
     let maxId = 0;
     images.forEach(img => {
       const n = parseInt(img.id, 10);
@@ -128,17 +136,18 @@ const ImagesView: React.FC<ImagesViewProps> = ({ images, onUpdateImages }) => {
       id: (maxId + 1 + index).toString().padStart(3, '0')
     }));
 
-    onUpdateImages([...images, ...newAssets]);
+    const updatedImages = [...images, ...newAssets];
+    onUpdateImages(updatedImages);
+    setActiveImageId(newAssets[0]?.id || activeImageId);
     setLoadingFiles(prev => prev.filter(id => !tempIds.includes(id)));
   };
 
-  // --- Event Handlers ---
   const handleDrag = (e: React.DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    if (e.type === "dragenter" || e.type === "dragover") {
+    if (e.type === 'dragenter' || e.type === 'dragover') {
       setDragActive(true);
-    } else if (e.type === "dragleave") {
+    } else if (e.type === 'dragleave') {
       setDragActive(false);
     }
   };
@@ -155,22 +164,34 @@ const ImagesView: React.FC<ImagesViewProps> = ({ images, onUpdateImages }) => {
   const handleUploadClick = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files) {
       processFiles(e.target.files);
-      // Reset input value to allow re-uploading the same file
       e.target.value = '';
     }
   };
 
-  const handleDelete = (id: string) => {
+  const handleDelete = async (id: string) => {
+    const usage = imageUsages.find(item => item.image.id === id);
+    if (usage && usage.usageCount > 0) {
+      const chapterPreview = usage.chapters.slice(0, 5).map(chapter => `- ${chapter.chapterTitle}`).join('\n');
+      const confirmed = await dialog.confirm(`这张图片仍被 ${usage.usageCount} 个章节引用：\n${chapterPreview}\n\n确定仍要删除吗？`);
+      if (!confirmed) return;
+    }
+
     onUpdateImages(images.filter(img => img.id !== id));
     setSelectedIds(prev => {
       const next = new Set(prev);
       next.delete(id);
       return next;
     });
+    if (activeImageId === id) {
+      const nextImage = images.find(img => img.id !== id);
+      setActiveImageId(nextImage?.id || null);
+    }
   };
 
-  const handleBulkDelete = () => {
+  const handleBulkDelete = async () => {
     if (selectedIds.size === 0) return;
+    if (!(await dialog.confirm(`确定删除选中的 ${selectedIds.size} 张图片吗？`))) return;
+
     onUpdateImages(images.filter(img => !selectedIds.has(img.id)));
     setSelectedIds(new Set());
     setIsSelectionMode(false);
@@ -260,8 +281,52 @@ const ImagesView: React.FC<ImagesViewProps> = ({ images, onUpdateImages }) => {
           <div className={`w-16 h-16 rounded-full flex items-center justify-center transition-all duration-300 mb-4 ${dragActive ? 'bg-blue-100 text-blue-600' : 'bg-gray-100 text-gray-500 group-hover:bg-blue-50 group-hover:text-blue-500'}`}>
             <UploadCloud size={32} />
           </div>
-          <p className="text-lg font-semibold text-gray-700">{dragActive ? '释放以开始上传' : '拖拽图片到此处'}</p>
+          <p className="text-lg font-semibold text-gray-700">{dragActive ? '释放以上传图片' : '拖拽图片到此处'}</p>
           <p className="text-sm text-gray-500 mt-1">或 <span className="text-blue-600 font-medium">点击浏览文件</span></p>
+        </div>
+      )}
+
+      {activeUsage && !isSelectionMode && (
+        <div className="mb-8 rounded-3xl border border-indigo-100 bg-white p-5 shadow-sm">
+          <div className="flex flex-col md:flex-row gap-5">
+            <div className="w-full md:w-40 aspect-square rounded-2xl overflow-hidden bg-gray-50 border border-gray-100">
+              <img src={activeUsage.image.data} alt={activeUsage.image.name} className="w-full h-full object-contain" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className="flex items-start justify-between gap-4">
+                <div className="min-w-0">
+                  <h3 className="text-lg font-bold text-gray-900 truncate">{activeUsage.image.name}</h3>
+                  <div className="mt-1 text-sm text-gray-500">
+                    {activeUsage.image.dimensions} · {formatBytes(activeUsage.image.size)}
+                  </div>
+                </div>
+                <div className="rounded-full bg-indigo-50 px-3 py-1 text-xs font-bold text-indigo-700">
+                  {activeUsage.usageCount} 章引用
+                </div>
+              </div>
+              <div className="mt-4">
+                <div className="text-xs font-bold uppercase tracking-wider text-gray-400 mb-2">引用章节</div>
+                {activeUsage.chapters.length > 0 ? (
+                  <div className="flex flex-wrap gap-2">
+                    {activeUsage.chapters.map(chapter => (
+                      <button
+                        key={`${activeUsage.image.id}-${chapter.chapterId}`}
+                        onClick={() => onLocateUsage(chapter.chapterId, activeUsage.image.id)}
+                        className="rounded-full border border-indigo-200 bg-indigo-50 px-3 py-1.5 text-xs font-semibold text-indigo-700 hover:bg-indigo-100 transition-colors flex items-center"
+                      >
+                        <LocateFixed size={12} className="mr-1.5" />
+                        {chapter.chapterTitle}
+                      </button>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="rounded-xl border border-dashed border-gray-200 bg-gray-50 px-3 py-3 text-sm text-gray-500">
+                    这张图片目前没有被章节引用，可以安全删除。
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
         </div>
       )}
 
@@ -272,14 +337,17 @@ const ImagesView: React.FC<ImagesViewProps> = ({ images, onUpdateImages }) => {
       )}
 
       <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-[repeat(auto-fill,minmax(150px,1fr))] gap-4 md:gap-6">
-        {images.map((img) => (
+        {imageUsages.map((usage) => (
           <ImageCard
-            key={img.id}
-            image={img}
+            key={usage.image.id}
+            image={usage.image}
             onDelete={handleDelete}
-            isSelected={selectedIds.has(img.id)}
+            isSelected={selectedIds.has(usage.image.id)}
             onToggleSelect={toggleSelect}
             selectionMode={isSelectionMode}
+            usageCount={usage.usageCount}
+            isActive={activeUsage?.image.id === usage.image.id}
+            onActivate={setActiveImageId}
           />
         ))}
         {loadingFiles.map((id) => (

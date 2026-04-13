@@ -1,6 +1,6 @@
 import React from 'react';
 import { Chapter } from '../../types';
-import { ChevronUp, ChevronDown, Trash2, ArrowDownToLine, Settings, Hash } from 'lucide-react';
+import { ChevronUp, ChevronDown, Trash2, ArrowDownToLine, Settings, Hash, CheckSquare, Square } from 'lucide-react';
 
 interface ChapterListItemProps {
   chapterItem: Chapter & { originalIndex: number };
@@ -13,6 +13,9 @@ interface ChapterListItemProps {
   onStartEdit: (e: React.MouseEvent, chapter: Chapter) => void;
   onMove: (index: number, direction: 'up' | 'down') => void;
   onDelete: (index: number) => void;
+  selectionMode?: boolean;
+  batchSelected?: boolean;
+  onToggleBatchSelected?: (chapterId: string) => void;
 }
 
 const ChapterListItem: React.FC<ChapterListItemProps> = ({
@@ -25,7 +28,10 @@ const ChapterListItem: React.FC<ChapterListItemProps> = ({
   onMergeNext,
   onStartEdit,
   onMove,
-  onDelete
+  onDelete,
+  selectionMode = false,
+  batchSelected = false,
+  onToggleBatchSelected
 }) => {
   const isSelected = currentChapterId === chapterItem.id;
   const isIncluded = !chapterItem.excludeFromToc;
@@ -40,6 +46,19 @@ const ChapterListItem: React.FC<ChapterListItemProps> = ({
             : 'hover:bg-gray-100/80 text-gray-800'
         }`}
       >
+        {selectionMode && (
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              onToggleBatchSelected?.(chapterItem.id);
+            }}
+            className={`mr-1 flex h-6 w-6 items-center justify-center rounded transition-colors ${isSelected ? 'hover:bg-white/20' : 'hover:bg-gray-200'}`}
+            title="选择章节"
+          >
+            {batchSelected ? <CheckSquare size={16} /> : <Square size={16} />}
+          </button>
+        )}
+
         {/* Checkbox for TOC Inclusion */}
         <div
           className={`flex items-center justify-center w-6 h-6 mr-2 cursor-pointer group/toc rounded hover:bg-black/10 transition-colors ${isSelected ? 'hover:bg-white/20' : ''}`}

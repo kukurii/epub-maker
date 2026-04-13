@@ -87,11 +87,16 @@ export const generateId = (text: string) => {
 export const extractHeadingsToSubItems = (editorEl: HTMLElement): TocItem[] => {
   const headings = editorEl.querySelectorAll('h1, h2');
   const subItems: TocItem[] = [];
+  let titleFound = false;
 
   headings.forEach((el) => {
     const text = (el.textContent || '').trim();
 
     if (el.tagName === 'H1') {
+      if (!titleFound) {
+        titleFound = true;
+        return;
+      }
       subItems.push({
         id: el.id || '',
         text: text || 'Untitled',
@@ -107,6 +112,12 @@ export const extractHeadingsToSubItems = (editorEl: HTMLElement): TocItem[] => {
   });
 
   return subItems;
+};
+
+export const extractChapterTitle = (editorEl: HTMLElement, fallbackTitle?: string) => {
+  const firstHeading = editorEl.querySelector('h1');
+  const headingText = firstHeading?.textContent?.trim();
+  return headingText || fallbackTitle || 'Untitled';
 };
 
 export const calculateReadStats = (text: string) => {

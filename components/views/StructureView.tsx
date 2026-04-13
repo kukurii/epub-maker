@@ -1,10 +1,11 @@
 import React, { useMemo, useState, useEffect, useCallback, useRef } from 'react';
-import { ProjectData, ExtraFile, PRESET_STYLES } from '../../types';
+import { ProjectData, ExtraFile } from '../../types';
 import saveAs from 'file-saver';
 import { FileNode } from '../structure/types';
 import FileTree from '../structure/FileTree';
 import { dialog } from '../../services/dialog';
 import FileContentArea from '../structure/FileContentArea';
+import { PRESET_STYLES } from '../../themes';
 
 interface StructureViewProps {
     project: ProjectData;

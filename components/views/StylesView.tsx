@@ -1,9 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { Sparkles, Loader2, Code, Settings, X, Key, Plus, ChevronDown, ChevronUp, BookTemplate, Info, ArrowRight, ExternalLink } from 'lucide-react';
-import { ProjectData, PRESET_STYLES, Chapter } from '../../types';
+import { ProjectData, Chapter } from '../../types';
 import { GoogleGenAI } from '@google/genai';
 import { dialog } from '../../services/dialog';
 import { contentToEditorHTML } from '../editor/utils';
+import { getTocTitle } from '../../services/toc';
+import { PRESET_STYLES } from '../../themes';
 
 const getEnvGeminiApiKey = () => {
     const env = (import.meta as any).env || {};
@@ -283,6 +285,7 @@ const StylesView: React.FC<StylesViewProps> = ({ project, activeChapter, onUpdat
     // Preview Logic
     let previewContent = '';
     const activeStyle = PRESET_STYLES.find(s => s.id === project.activeStyleId);
+    const tocTitle = getTocTitle(project.chapters);
 
     if (stylePreviewMode === 'chapter') {
         previewContent = activeChapter 
@@ -315,6 +318,13 @@ const StylesView: React.FC<StylesViewProps> = ({ project, activeChapter, onUpdat
         }).join('');
         previewContent = `<h1>目录</h1><ul class="toc-list">${tocItems || '<li class="toc-item">暂无章节</li>'}</ul>`;
     }
+
+    if (stylePreviewMode === 'toc') {
+        previewContent = previewContent.replace(/<h1>.*?<\/h1>/, `<h1>${tocTitle}</h1>`);
+        previewContent = previewContent.replace('鏆傛棤绔犺妭', '暂无章节');
+    }
+
+    previewContent = previewContent.replace('鏆傛棤绔犺妭', '暂无章节');
 
     const safeCustomCSS = project.customCSS.replace(/<\/style>/gi, '<\\/style>');
     // Include Extra Files CSS

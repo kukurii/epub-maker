@@ -9,20 +9,26 @@ import UnderlineExtension from '@tiptap/extension-underline';
 import { RubyMark } from './editor/extensions/RubyMark';
 import { CustomHeading } from './editor/extensions/CustomHeading';
 import { CustomHorizontalRule } from './editor/extensions/CustomHorizontalRule';
-import { ProjectData, PRESET_STYLES, TocItem, ImageAsset } from '../types';
+import { ProjectData, TocItem, ImageAsset } from '../types';
 import EditorToolbar from './editor/EditorToolbar';
 import FindReplaceBar from './editor/FindReplaceBar';
 import ImageModal from './editor/ImageModal';
 import { dialog } from '../services/dialog';
-import { contentToEditorHTML, editorHTMLToContent, extractHeadingsToSubItems, calculateReadStats } from './editor/utils';
+import { contentToEditorHTML, editorHTMLToContent, extractHeadingsToSubItems, extractChapterTitle, calculateReadStats } from './editor/utils';
 import { useEditorSearch } from './editor/useEditorSearch';
+import { PRESET_STYLES } from '../themes';
 
 interface EditorProps {
   content: string;
   onContentChange: (newContent: string, title?: string, subItems?: TocItem[]) => void;
   onSplitChapter: (beforeContent: string, afterContent: string) => void;
   project: ProjectData;
-  scrollToId?: string | null;
+  focusRequest?: {
+    anchorId?: string | null;
+    searchText?: string | null;
+    imageId?: string | null;
+    key: number;
+  } | null;
   onMobileBack?: () => void;
   activeChapter?: { title: string };
 }
@@ -32,13 +38,28 @@ const Editor: React.FC<EditorProps> = ({
   onContentChange,
   onSplitChapter,
   project,
-  scrollToId,
+  focusRequest,
   activeChapter,
   onMobileBack
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
+  const onContentChangeRef = useRef(onContentChange);
+  const imagesRef = useRef(project.images);
+  const activeChapterTitleRef = useRef(activeChapter?.title);
   const [showImageModal, setShowImageModal] = useState(false);
   const [stats, setStats] = useState({ chars: 0, time: 0 });
+
+  useEffect(() => {
+    onContentChangeRef.current = onContentChange;
+  }, [onContentChange]);
+
+  useEffect(() => {
+    imagesRef.current = project.images;
+  }, [project.images]);
+
+  useEffect(() => {
+    activeChapterTitleRef.current = activeChapter?.title;
+  }, [activeChapter?.title]);
 
   const editor = useEditor({
     extensions: [
@@ -75,18 +96,20 @@ const Editor: React.FC<EditorProps> = ({
     },
     onUpdate: ({ editor }) => {
       const newEditorHTML = editor.getHTML();
-      const newContent = editorHTMLToContent(newEditorHTML, project.images);
+      const newContent = editorHTMLToContent(newEditorHTML, imagesRef.current);
       setStats(calculateReadStats(editor.getText()));
 
+      let newTitle = activeChapterTitleRef.current;
       let subItems: TocItem[] = [];
       if (containerRef.current) {
         const proseMirrorEl = containerRef.current.querySelector('.ProseMirror') as HTMLElement | null;
         if (proseMirrorEl) {
+          newTitle = extractChapterTitle(proseMirrorEl, activeChapterTitleRef.current);
           subItems = extractHeadingsToSubItems(proseMirrorEl);
         }
       }
 
-      onContentChange(newContent, undefined, subItems);
+      onContentChangeRef.current(newContent, newTitle, subItems);
     },
     editorProps: {
       attributes: {
@@ -94,20 +117,31 @@ const Editor: React.FC<EditorProps> = ({
         spellcheck: 'false',
       },
     },
-  });
+  }, []);
 
   const searchProps = useEditorSearch(editor, content);
 
   useEffect(() => {
-    if (!scrollToId || !containerRef.current) return;
+    if (!focusRequest?.anchorId || !containerRef.current) return;
 
-    const element = containerRef.current.querySelector(`#${scrollToId}`);
+    const element = containerRef.current.querySelector(`#${focusRequest.anchorId}`);
     if (!element) return;
 
     element.scrollIntoView({ behavior: 'smooth', block: 'start' });
     element.classList.add('bg-yellow-100', 'transition-colors', 'duration-1000');
     setTimeout(() => element.classList.remove('bg-yellow-100'), 1500);
-  }, [scrollToId]);
+  }, [focusRequest?.anchorId, focusRequest?.key]);
+
+  useEffect(() => {
+    if (!focusRequest?.imageId || !containerRef.current) return;
+
+    const element = containerRef.current.querySelector(`img[data-id="${focusRequest.imageId}"]`);
+    if (!element) return;
+
+    element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    element.classList.add('ring-4', 'ring-amber-300', 'transition-all', 'duration-1000');
+    setTimeout(() => element.classList.remove('ring-4', 'ring-amber-300'), 1500);
+  }, [focusRequest?.imageId, focusRequest?.key]);
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -134,6 +168,13 @@ const Editor: React.FC<EditorProps> = ({
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [searchProps]);
+
+  useEffect(() => {
+    if (!focusRequest?.searchText || !editor) return;
+
+    searchProps.setShowFindBar(true);
+    searchProps.setFindText(focusRequest.searchText);
+  }, [editor, focusRequest?.key]);
 
   const insertImage = useCallback((img: ImageAsset) => {
     if (!editor) return;
@@ -190,14 +231,60 @@ const Editor: React.FC<EditorProps> = ({
   const scopedCSS = useMemo(() => {
     const activeStyle = PRESET_STYLES.find(s => s.id === project.activeStyleId) || PRESET_STYLES[0];
     const presetCss = project.isPresetStyleActive !== false ? activeStyle.css : 'body {}';
+    const sanitizeEditorBodyStyles = (bodyStyles: string) => {
+      const blockedProps = new Set([
+        'width',
+        'min-width',
+        'max-width',
+        'height',
+        'min-height',
+        'max-height',
+        'margin',
+        'margin-left',
+        'margin-right',
+        'margin-top',
+        'margin-bottom',
+        'padding',
+        'padding-left',
+        'padding-right',
+        'padding-top',
+        'padding-bottom',
+        'overflow',
+        'overflow-x',
+        'overflow-y',
+        'position',
+        'left',
+        'right',
+        'top',
+        'bottom',
+        'display',
+      ]);
+
+      return bodyStyles
+        .split(';')
+        .map(rule => rule.trim())
+        .filter(Boolean)
+        .filter(rule => {
+          const colonIndex = rule.indexOf(':');
+          if (colonIndex === -1) return false;
+          const property = rule.slice(0, colonIndex).trim().toLowerCase();
+          return !blockedProps.has(property);
+        })
+        .join(';\n      ');
+    };
 
     const scopeCSS = (css: string) => css
       .replace(/body\s*{[^}]*}/, '')
-      .replace(/(^|})\s*([a-z0-9][a-z0-9\-_]*|\.[a-z0-9][a-z0-9\-_]*)/gi, '$1 .editor-paper $2');
+      .replace(/:root/g, '.editor-paper')
+      .replace(/(^|})\s*([a-z0-9][a-z0-9\-_]*|\.[a-z0-9][a-z0-9\-_]*|#[a-z0-9][a-z0-9\-_]*)/gi, '$1 .editor-paper $2');
 
     return `
     .editor-paper {
-      ${presetCss.match(/body\s*{([^}]*)}/)?.[1] || ''}
+      ${sanitizeEditorBodyStyles(presetCss.match(/body\s*{([^}]*)}/)?.[1] || '')}
+      width: 100%;
+      max-width: none;
+      margin: 0;
+      padding: 0;
     }
     ${scopeCSS(presetCss)}
     ${scopeCSS(project.customCSS)}

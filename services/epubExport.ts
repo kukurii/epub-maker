@@ -1,6 +1,8 @@
 import JSZip from 'jszip';
 import saveAs from 'file-saver';
-import { ProjectData, PRESET_STYLES } from '../types';
+import { ProjectData } from '../types';
+import { getTocTitle } from './toc';
+import { PRESET_STYLES } from '../themes';
 
 // Helper to ensure HTML is valid XHTML for EPUB (self-closing tags, entities)
 const fixXHTML = (html: string): string => {
@@ -25,6 +27,7 @@ const fixXHTML = (html: string): string => {
 
 export const generateEpub = async (project: ProjectData) => {
     const zip = new JSZip();
+    const tocTitle = getTocTitle(project.chapters);
 
     // 1. Mimetype (must be first, uncompressed)
     zip.file('mimetype', 'application/epub+zip', { compression: "STORE" });
@@ -46,7 +49,7 @@ export const generateEpub = async (project: ProjectData) => {
     const activeStyle = PRESET_STYLES.find(s => s.id === project.activeStyleId) || PRESET_STYLES[0];
     const presetCss = project.isPresetStyleActive !== false ? activeStyle.css : '/* Preset style disabled by user. */';
     const finalCss = `${presetCss}\n\n/* Custom CSS */\n${project.customCSS}\n\n/* → 隐藏分页标记，但保留分页功能 */\nfy {display: none;page-break-after: always;break-after: page;}`;
-    oebps.file('style.css', finalCss);
+    oebps.file('style.css', `${finalCss}\n\n/* Export safety resets */\nbody.cover-page { max-width: none !important; border: none !important; border-radius: 0 !important; box-shadow: none !important; }`);
 
     // --- Extra Files (Custom CSS created in Structure View) ---
     if (project.extraFiles) {
@@ -198,7 +201,10 @@ export const generateEpub = async (project: ProjectData) => {
   </ul>
 </body>
 </html>`;
-    oebps.file('toc.xhtml', tocXhtml);
+    const finalTocXhtml = tocXhtml
+        .replace('<title>Table of Contents</title>', `<title>${tocTitle}</title>`)
+        .replace(/<h1>.*?<\/h1>/, `<h1>${tocTitle}</h1>`);
+    oebps.file('toc.xhtml', finalTocXhtml);
 
     // --- OPF (Package File) ---
     const uid = `urn:uuid:${Date.now()}`;
@@ -287,7 +293,8 @@ export const generateEpub = async (project: ProjectData) => {
   </guide>
 </package>`;
 
-    oebps.file('content.opf', opfContent);
+    const finalOpfContent = opfContent.replace('title="Table of Contents"', `title="${tocTitle}"`);
+    oebps.file('content.opf', finalOpfContent);
 
     // --- NCX ---
     let navPoints = '';
@@ -360,7 +367,11 @@ export const generateEpub = async (project: ProjectData) => {
   </navMap>
 </ncx>`;
 
-    oebps.file('toc.ncx', ncxContent);
+    const finalNcxContent = ncxContent.replace(
+        /<navPoint id="navPoint-toc"[\s\S]*?<navLabel><text>.*?<\/text><\/navLabel>/,
+        `<navPoint id="navPoint-toc" playOrder="${coverFilename ? 2 : 1}">\n      <navLabel><text>${tocTitle}</text></navLabel>`,
+    );
+    oebps.file('toc.ncx', finalNcxContent);
 
     const content = await zip.generateAsync({ type: 'blob' });
     saveAs(content, `${project.metadata.title || 'ebook'}.epub`);
