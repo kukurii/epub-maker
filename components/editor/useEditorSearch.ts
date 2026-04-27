@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect, useMemo } from 'react';
+import { useState, useCallback, useEffect, useMemo, RefObject } from 'react';
 import type { Editor } from '@tiptap/react';
 
 interface SearchMatch {
@@ -81,7 +81,46 @@ const buildSearchMatches = (
   return matches;
 };
 
-export const useEditorSearch = (editor: Editor | null, contentDeps: string) => {
+/**
+ * 将编辑器中某个文档位置滚动到外层滚动容器的可视区域中央。
+ *
+ * 原因：TipTap 的 scrollIntoView() 命令只能控制 ProseMirror 自身内部的
+ * scrollable 容器，但本项目的外层滚动区是 Editor.tsx 里的 overflow-y-auto
+ * div（scrollRef）。需要用 view.coordsAtPos() 取到目标文字的屏幕坐标，
+ * 再换算成滚动容器的 scrollTop 来实现真正的跳转。
+ */
+const scrollMatchIntoView = (
+  editor: Editor,
+  match: SearchMatch,
+  scrollContainer: HTMLElement,
+) => {
+  try {
+    const { view } = editor;
+    // 取匹配范围起始位置的屏幕坐标（相对于视口）
+    const coords = view.coordsAtPos(match.from);
+    // 计算相对于滚动容器顶部的偏移量
+    const containerRect = scrollContainer.getBoundingClientRect();
+    const relativeTop = coords.top - containerRect.top + scrollContainer.scrollTop;
+    // 将目标滚动到容器可视区的中央
+    const targetScrollTop = relativeTop - scrollContainer.clientHeight / 2;
+    scrollContainer.scrollTo({ top: Math.max(0, targetScrollTop), behavior: 'smooth' });
+  } catch {
+    // 如果坐标计算失败（例如文档还未渲染完全），降级到 TipTap 内置方法
+    editor.chain().setTextSelection(match).scrollIntoView().run();
+  }
+};
+
+/**
+ * useEditorSearch - 编辑器搜索与替换逻辑 hook
+ * @param editor    TipTap 编辑器实例
+ * @param contentDeps 内容依赖字符串，用于在内容变化时重新计算匹配项
+ * @param scrollRef 外层可滚动容器的 ref，用于实现真正的滚动跳转
+ */
+export const useEditorSearch = (
+  editor: Editor | null,
+  contentDeps: string,
+  scrollRef?: RefObject<HTMLElement | null>,
+) => {
   const [showFindBar, setShowFindBar] = useState(false);
   const [findText, setFindText] = useState('');
   const [replaceText, setReplaceText] = useState('');
@@ -94,6 +133,7 @@ export const useEditorSearch = (editor: Editor | null, contentDeps: string) => {
     [editor, findText, showFindBar, matchCase, wholeWord, contentDeps],
   );
 
+  // 当搜索词或匹配总数变化时，重置/调整当前索引
   useEffect(() => {
     if (!findText || matches.length === 0) {
       setCurrentMatchIndex(-1);
@@ -106,12 +146,22 @@ export const useEditorSearch = (editor: Editor | null, contentDeps: string) => {
     });
   }, [findText, matches.length]);
 
+  // 当前索引变化时，先选中文字，再滚动到可视区
   useEffect(() => {
     if (!editor || currentMatchIndex < 0 || currentMatchIndex >= matches.length) return;
 
     const active = matches[currentMatchIndex];
-    editor.chain().setTextSelection(active).scrollIntoView().run();
-  }, [editor, matches, currentMatchIndex]);
+    // 先设置选区（高亮选中）
+    editor.chain().setTextSelection(active).run();
+
+    // 再滚动：优先使用外层容器，否则降级到 TipTap 内置
+    const container = scrollRef?.current;
+    if (container) {
+      scrollMatchIntoView(editor, active, container);
+    } else {
+      editor.commands.scrollIntoView();
+    }
+  }, [editor, currentMatchIndex]); // 注意：只依赖 index，避免 matches 引用变化导致重复触发
 
   const navigateMatch = useCallback((direction: 'next' | 'prev') => {
     if (matches.length === 0) return;
@@ -143,8 +193,15 @@ export const useEditorSearch = (editor: Editor | null, contentDeps: string) => {
 
   const selectCurrentMatch = useCallback(() => {
     if (!editor || currentMatchIndex < 0 || currentMatchIndex >= matches.length) return;
-    editor.chain().setTextSelection(matches[currentMatchIndex]).scrollIntoView().run();
-  }, [editor, matches, currentMatchIndex]);
+    const active = matches[currentMatchIndex];
+    editor.chain().setTextSelection(active).run();
+    const container = scrollRef?.current;
+    if (container) {
+      scrollMatchIntoView(editor, active, container);
+    } else {
+      editor.commands.scrollIntoView();
+    }
+  }, [editor, matches, currentMatchIndex, scrollRef]);
 
   return {
     showFindBar,

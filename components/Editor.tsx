@@ -43,6 +43,8 @@ const Editor: React.FC<EditorProps> = ({
   onMobileBack
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
+  // scrollRef 指向外层 overflow-y-auto 滚动容器，用于搜索跳转时精准滚动
+  const scrollRef = useRef<HTMLDivElement>(null);
   const onContentChangeRef = useRef(onContentChange);
   const imagesRef = useRef(project.images);
   const activeChapterTitleRef = useRef(activeChapter?.title);
@@ -119,7 +121,8 @@ const Editor: React.FC<EditorProps> = ({
     },
   }, []);
 
-  const searchProps = useEditorSearch(editor, content);
+  // 将外层滚动容器 ref 传给 useEditorSearch，确保搜索跳转能滚动到正确位置
+  const searchProps = useEditorSearch(editor, content, scrollRef);
 
   useEffect(() => {
     if (!focusRequest?.anchorId || !containerRef.current) return;
@@ -465,7 +468,7 @@ const Editor: React.FC<EditorProps> = ({
         />
       )}
 
-      <div className="flex-1 overflow-y-auto bg-slate-50 p-2 md:p-8 scroll-smooth pb-20">
+      <div ref={scrollRef} className="flex-1 overflow-y-auto bg-slate-50 p-2 md:p-8 scroll-smooth pb-20">
         <div
           ref={containerRef}
           className="relative mx-auto w-full max-w-[800px] bg-white ring-1 ring-gray-900/5 shadow-xl min-h-[900px] md:min-h-[1100px] p-6 md:p-16 cursor-text transition-all rounded-xl flex flex-col"
