@@ -1,5 +1,6 @@
 import { useState, useCallback, useEffect, useMemo, RefObject } from 'react';
 import type { Editor } from '@tiptap/react';
+import { searchHighlightKey, buildHighlightDecorations } from './extensions/SearchHighlight';
 
 interface SearchMatch {
   from: number;
@@ -15,6 +16,7 @@ interface TextSegment {
 
 const WORD_CHAR_REGEX = /[\w\u00C0-\u024F\u4E00-\u9FFF]/;
 
+// 收集文档中所有文本节点，拼成一个完整字符串，并记录每段的位置映射
 const collectTextSegments = (editor: Editor): { fullText: string; segments: TextSegment[] } => {
   const segments: TextSegment[] = [];
   let fullText = '';
@@ -35,12 +37,14 @@ const collectTextSegments = (editor: Editor): { fullText: string; segments: Text
   return { fullText, segments };
 };
 
+// 把"全文字符串的偏移量"换算成"ProseMirror 文档中的位置"
 const resolveDocPosition = (segments: TextSegment[], index: number) => {
   const segment = segments.find(item => index >= item.startIndex && index < item.endIndex);
   if (!segment) return null;
   return segment.from + (index - segment.startIndex);
 };
 
+// 在文档中搜索所有匹配项，返回文档位置列表
 const buildSearchMatches = (
   editor: Editor,
   findText: string,
@@ -111,6 +115,22 @@ const scrollMatchIntoView = (
 };
 
 /**
+ * 把高亮 Decoration 写入编辑器
+ * 通过 dispatch 一个带 meta 的 transaction 来更新 SearchHighlight 插件的状态
+ */
+const applyHighlightDecorations = (
+  editor: Editor,
+  matches: SearchMatch[],
+  activeIndex: number,
+) => {
+  const { state, view } = editor;
+  const decorations = buildHighlightDecorations(state.doc, matches, activeIndex);
+  // dispatch 一个空 transaction，附带高亮数据
+  const tr = state.tr.setMeta(searchHighlightKey, decorations);
+  view.dispatch(tr);
+};
+
+/**
  * useEditorSearch - 编辑器搜索与替换逻辑 hook
  * @param editor    TipTap 编辑器实例
  * @param contentDeps 内容依赖字符串，用于在内容变化时重新计算匹配项
@@ -128,6 +148,7 @@ export const useEditorSearch = (
   const [matchCase, setMatchCase] = useState(false);
   const [wholeWord, setWholeWord] = useState(false);
 
+  // 计算所有匹配项（findText、选项或内容变化时重新计算）
   const matches = useMemo(
     () => (editor && showFindBar ? buildSearchMatches(editor, findText, matchCase, wholeWord) : []),
     [editor, findText, showFindBar, matchCase, wholeWord, contentDeps],
@@ -146,22 +167,35 @@ export const useEditorSearch = (
     });
   }, [findText, matches.length]);
 
-  // 当前索引变化时，先选中文字，再滚动到可视区
+  // 关闭查找栏时，清除所有高亮
+  useEffect(() => {
+    if (!editor) return;
+    if (!showFindBar) {
+      applyHighlightDecorations(editor, [], -1);
+    }
+  }, [editor, showFindBar]);
+
+  // 当匹配项列表或当前索引变化时，更新全部高亮 Decoration
+  useEffect(() => {
+    if (!editor) return;
+    // 更新 Decoration（所有匹配项 + 当前激活项）
+    applyHighlightDecorations(editor, matches, currentMatchIndex);
+  }, [editor, matches, currentMatchIndex]);
+
+  // 当前索引变化时，滚动到可视区（不需要 setTextSelection，高亮已由 Decoration 处理）
   useEffect(() => {
     if (!editor || currentMatchIndex < 0 || currentMatchIndex >= matches.length) return;
 
     const active = matches[currentMatchIndex];
-    // 先设置选区（高亮选中）
-    editor.chain().setTextSelection(active).run();
 
-    // 再滚动：优先使用外层容器，否则降级到 TipTap 内置
+    // 滚动：优先使用外层容器，否则降级到 TipTap 内置
     const container = scrollRef?.current;
     if (container) {
       scrollMatchIntoView(editor, active, container);
     } else {
       editor.commands.scrollIntoView();
     }
-  }, [editor, currentMatchIndex]); // 注意：只依赖 index，避免 matches 引用变化导致重复触发
+  }, [editor, currentMatchIndex]); // 只依赖 index，避免 matches 引用变化导致重复触发
 
   const navigateMatch = useCallback((direction: 'next' | 'prev') => {
     if (matches.length === 0) return;

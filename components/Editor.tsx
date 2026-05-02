@@ -9,6 +9,7 @@ import UnderlineExtension from '@tiptap/extension-underline';
 import { RubyMark } from './editor/extensions/RubyMark';
 import { CustomHeading } from './editor/extensions/CustomHeading';
 import { CustomHorizontalRule } from './editor/extensions/CustomHorizontalRule';
+import { SearchHighlight } from './editor/extensions/SearchHighlight';
 import { ProjectData, TocItem, ImageAsset } from '../types';
 import EditorToolbar from './editor/EditorToolbar';
 import FindReplaceBar from './editor/FindReplaceBar';
@@ -91,6 +92,7 @@ const Editor: React.FC<EditorProps> = ({
         types: ['heading', 'paragraph'],
       }),
       RubyMark,
+      SearchHighlight, // 搜索高亮 Decoration 插件
     ],
     content: contentToEditorHTML(content, project.images),
     onCreate: ({ editor }) => {
