@@ -111,11 +111,21 @@ export const generateEpub = async (project: ProjectData) => {
 <html xmlns="http://www.w3.org/1999/xhtml">
 <head>
   <title>Cover</title>
-  <link rel="stylesheet" type="text/css" href="style.css"/>
+  <style type="text/css">
+    body {
+      margin: 0;
+      padding: 0;
+      text-align: center;
+    }
+    img {
+      max-width: 100%;
+      height: auto;
+    }
+  </style>
 </head>
-<body class="cover-page">
-  <div class="cover-container">
-     <img src="${coverFilename}" alt="Cover Image" class="cover-image" />
+<body>
+  <div>
+    <img src="${coverFilename}" alt="Cover" />
   </div>
 </body>
 </html>`;

@@ -296,7 +296,7 @@ const CoverGenerator: React.FC<CoverGeneratorProps> = ({
 
         const dataUrl = await htmlToImage.toPng(coverRef.current, {
           quality: 0.95,
-          pixelRatio: 2
+          pixelRatio: 4  // 生成 1280x1920 高清封面
         });
 
         // When generating from HTML composition, it MUST be a new image (cover.png), so coverId is null.
