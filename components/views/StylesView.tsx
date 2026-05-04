@@ -3,7 +3,7 @@ import { Sparkles, Loader2, Code, Settings, X, Key, Plus, ChevronDown, ChevronUp
 import { ProjectData, Chapter } from '../../types';
 import { GoogleGenAI } from '@google/genai';
 import { dialog } from '../../services/dialog';
-import { contentToEditorHTML } from '../editor/utils';
+import { contentToEditorHTML } from '../text-editor/editorHelpers';
 import { getTocTitle } from '../../services/toc';
 import { PRESET_STYLES } from '../../themes';
 

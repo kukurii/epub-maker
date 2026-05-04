@@ -1,7 +1,7 @@
 import React from 'react';
 import { ViewMode, ProjectData, Chapter, TocItem } from '../types';
-import Editor from './Editor';
-import Directory from './ChapterManager';
+import TextEditor from './text-editor/TextEditor';
+import ChapterManager from './chapter-manager/ChapterManager';
 import CoverGenerator from './views/CoverGenerator';
 import FilesView from './views/FilesView';
 import MetadataView from './views/MetadataView';
@@ -68,7 +68,7 @@ const ViewContainer: React.FC<ViewContainerProps> = ({
         <div className="flex flex-1 h-full overflow-hidden relative">
         {/* 目录列表区：固定 w-80 宽度，移动端全宽且只在没有选中章节时显示 */}
           <div className={`${activeChapterId ? 'hidden md:flex' : 'flex'} w-full md:w-80 h-full flex-col flex-shrink-0`}>
-            <Directory
+            <ChapterManager
               chapters={project.chapters}
               images={project.images}
               currentChapterId={activeChapterId}
@@ -82,7 +82,7 @@ const ViewContainer: React.FC<ViewContainerProps> = ({
 
           <div className={`${!activeChapterId ? 'hidden md:flex' : 'flex'} flex-1 h-full flex-col min-w-0`}>
             {activeChapter ? (
-              <Editor
+              <TextEditor
                 key={activeChapterId}
                 content={activeChapter.content}
                 onContentChange={onUpdateChapterContent}

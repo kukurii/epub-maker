@@ -2,28 +2,37 @@ import React from 'react';
 import { Chapter } from '../../types';
 import { X, Hash } from 'lucide-react';
 
-interface TocPreviewModalProps {
+interface TocPreviewProps {
   chapters: Chapter[];
   tocTitle: string;
   onClose: () => void;
 }
 
-const TocPreviewModal: React.FC<TocPreviewModalProps> = ({ chapters, tocTitle, onClose }) => {
-  const visibleChapters = chapters.filter((chapter) => !chapter.excludeFromToc);
+/**
+ * TOC 预览弹窗
+ * 展示最终导出时的目录结构
+ */
+const TocPreview: React.FC<TocPreviewProps> = ({ chapters, tocTitle, onClose }) => {
+  // 只展示不被排除的章节
+  const visibleChapters = chapters.filter((ch) => !ch.excludeFromToc);
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4 md:p-8 bg-gray-900/40 backdrop-blur-sm animate-in fade-in duration-200"
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 md:p-8
+        bg-gray-900/40 backdrop-blur-sm animate-in fade-in duration-200"
       onClick={onClose}
     >
       <div
         className="bg-white rounded-3xl shadow-2xl w-full max-w-2xl flex flex-col max-h-[90vh] ring-1 ring-black/5"
         onClick={(e) => e.stopPropagation()}
       >
+        {/* 标题栏 */}
         <div className="flex items-center justify-between p-6 border-b border-gray-100 bg-white rounded-t-3xl">
           <div>
             <h3 className="text-xl font-bold text-gray-800 tracking-tight">{tocTitle} 预览</h3>
-            <p className="text-xs text-gray-500 mt-1.5 font-medium">目录名自动取第一个大章节，预览展示实际导出结构</p>
+            <p className="text-xs text-gray-500 mt-1.5 font-medium">
+              目录名自动取第一个大章节，预览展示实际导出结构
+            </p>
           </div>
           <button
             onClick={onClose}
@@ -32,6 +41,8 @@ const TocPreviewModal: React.FC<TocPreviewModalProps> = ({ chapters, tocTitle, o
             <X size={20} />
           </button>
         </div>
+
+        {/* 章节列表 */}
         <div className="flex-1 overflow-y-auto p-4 md:p-6 custom-scrollbar bg-gray-50/50 rounded-b-3xl">
           <div className="space-y-2">
             {visibleChapters.map((chapter, index) => (
@@ -39,19 +50,32 @@ const TocPreviewModal: React.FC<TocPreviewModalProps> = ({ chapters, tocTitle, o
                 key={chapter.id}
                 className="bg-white rounded-xl border border-gray-100/80 shadow-sm overflow-hidden hover:shadow-md transition-shadow"
               >
+                {/* 章节标题 */}
                 <div className="flex items-start py-3 px-4 bg-white">
-                  <div className="w-8 shrink-0 text-sm font-semibold text-blue-500/70 font-mono pt-0.5">{index + 1}.</div>
-                  <div className="flex-1 font-bold text-gray-800 leading-relaxed break-words">{chapter.title || '无标题章节'}</div>
+                  <div className="w-8 shrink-0 text-sm font-semibold text-blue-500/70 font-mono pt-0.5">
+                    {index + 1}.
+                  </div>
+                  <div className="flex-1 font-bold text-gray-800 leading-relaxed break-words">
+                    {chapter.title || '无标题章节'}
+                  </div>
                 </div>
+
+                {/* 子项 */}
                 {chapter.subItems && chapter.subItems.length > 0 && (
                   <div className="border-t border-gray-50 bg-gray-50/50 px-4 py-2 space-y-1">
                     {chapter.subItems.map((sub, subIndex) => (
                       <div
-                        key={subIndex}
+                        key={sub.id || subIndex}
                         className="flex items-start py-1.5 px-2 rounded-lg hover:bg-white text-sm transition-colors text-gray-600 group/sub"
                       >
-                        <Hash size={14} className="mr-2.5 mt-0.5 text-gray-300 group-hover/sub:text-blue-400 transition-colors shrink-0" />
-                        <span className={`leading-relaxed break-words flex-1 ${sub.level === 1 ? 'font-semibold text-gray-700' : 'pl-5 text-gray-500'}`}>
+                        <Hash
+                          size={14}
+                          className="mr-2.5 mt-0.5 text-gray-300 group-hover/sub:text-blue-400 transition-colors shrink-0"
+                        />
+                        <span
+                          className={`leading-relaxed break-words flex-1
+                            ${sub.level === 1 ? 'font-semibold text-gray-700' : 'pl-5 text-gray-500'}`}
+                        >
                           {sub.text || '小节'}
                         </span>
                       </div>
@@ -60,6 +84,7 @@ const TocPreviewModal: React.FC<TocPreviewModalProps> = ({ chapters, tocTitle, o
                 )}
               </div>
             ))}
+
             {visibleChapters.length === 0 && (
               <div className="text-center py-10 text-gray-400 text-sm italic">当前目录为空</div>
             )}
@@ -70,4 +95,4 @@ const TocPreviewModal: React.FC<TocPreviewModalProps> = ({ chapters, tocTitle, o
   );
 };
 
-export default TocPreviewModal;
+export default TocPreview;
