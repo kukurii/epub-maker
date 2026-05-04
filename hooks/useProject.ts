@@ -200,7 +200,8 @@ export const useProject = () => {
     };
 
     const loadChaptersFromImport = (chapters: Chapter[], firstChapterId: string) => {
-        updateProject({ chapters });
+        // 不再重复写 chapters —— 调用者已通过 onProjectUpdate 写入了完整数据
+        // 如果这里再 updateProject({ chapters })，会覆盖掉刚写入的 images/cover 等字段
         setActiveChapterId(firstChapterId);
     };
 

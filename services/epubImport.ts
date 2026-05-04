@@ -234,12 +234,17 @@ export const parseEpub = async (file: File, options?: { imageStartId?: number; c
 
     const resolvedChapters = (await Promise.all(chapterPromises)).filter(Boolean) as Chapter[];
 
-    const coverId = opfDoc.querySelector('meta[name="cover"]')?.getAttribute('content');
+    const coverMetaId = opfDoc.querySelector('meta[name="cover"]')?.getAttribute('content');
     let coverDataUrl: string | null = null;
-    if (coverId) {
-        const coverItem = itemMap.get(coverId);
+    let coverAssetId: string | null = null;
+    if (coverMetaId) {
+        const coverItem = itemMap.get(coverMetaId);
         if (coverItem) {
-            coverDataUrl = imagePathMap.get(coverItem.zipPath)?.data || null;
+            const coverAsset = imagePathMap.get(coverItem.zipPath);
+            if (coverAsset) {
+                coverDataUrl = coverAsset.data;
+                coverAssetId = coverAsset.id;
+            }
         }
     }
 
@@ -250,5 +255,6 @@ export const parseEpub = async (file: File, options?: { imageStartId?: number; c
         extraFiles: newExtraFiles,
         customCSS: importedCustomCSS,
         cover: coverDataUrl,
+        coverId: coverAssetId,
     };
 };

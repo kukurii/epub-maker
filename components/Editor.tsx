@@ -117,7 +117,7 @@ const Editor: React.FC<EditorProps> = ({
     },
     editorProps: {
       attributes: {
-        class: 'outline-none min-h-[600px] md:min-h-[900px] flex-1 ProseMirror',
+        class: 'outline-none flex-1',
         spellcheck: 'false',
       },
     },
@@ -148,38 +148,41 @@ const Editor: React.FC<EditorProps> = ({
     setTimeout(() => element.classList.remove('ring-4', 'ring-amber-300'), 1500);
   }, [focusRequest?.imageId, focusRequest?.key]);
 
+  // 解构出稳定的引用，避免 searchProps 对象每次渲染都变化导致事件监听器重复注册
+  const { setShowFindBar, showFindBar: isFindBarVisible, setFindText: setSearchFindText } = searchProps;
+
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
       const isMeta = event.ctrlKey || event.metaKey;
 
       if (isMeta && event.key.toLowerCase() === 'f') {
         event.preventDefault();
-        searchProps.setShowFindBar(true);
+        setShowFindBar(true);
         return;
       }
 
       if (isMeta && event.shiftKey && event.key.toLowerCase() === 'h') {
         event.preventDefault();
-        searchProps.setShowFindBar(true);
+        setShowFindBar(true);
         return;
       }
 
-      if (event.key === 'Escape' && searchProps.showFindBar) {
+      if (event.key === 'Escape' && isFindBarVisible) {
         event.preventDefault();
-        searchProps.setShowFindBar(false);
+        setShowFindBar(false);
       }
     };
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [searchProps]);
+  }, [setShowFindBar, isFindBarVisible]);
 
   useEffect(() => {
     if (!focusRequest?.searchText || !editor) return;
 
-    searchProps.setShowFindBar(true);
-    searchProps.setFindText(focusRequest.searchText);
-  }, [editor, focusRequest?.key]);
+    setShowFindBar(true);
+    setSearchFindText(focusRequest.searchText);
+  }, [editor, focusRequest?.key, setShowFindBar, setSearchFindText]);
 
   const insertImage = useCallback((img: ImageAsset) => {
     if (!editor) return;
@@ -236,35 +239,17 @@ const Editor: React.FC<EditorProps> = ({
   const scopedCSS = useMemo(() => {
     const activeStyle = PRESET_STYLES.find(s => s.id === project.activeStyleId) || PRESET_STYLES[0];
     const presetCss = project.isPresetStyleActive !== false ? activeStyle.css : 'body {}';
+
+    // 从 body {} 规则中提取允许的样式属性（过滤掉布局相关的）
     const sanitizeEditorBodyStyles = (bodyStyles: string) => {
       const blockedProps = new Set([
-        'width',
-        'min-width',
-        'max-width',
-        'height',
-        'min-height',
-        'max-height',
-        'margin',
-        'margin-left',
-        'margin-right',
-        'margin-top',
-        'margin-bottom',
-        'padding',
-        'padding-left',
-        'padding-right',
-        'padding-top',
-        'padding-bottom',
-        'overflow',
-        'overflow-x',
-        'overflow-y',
-        'position',
-        'left',
-        'right',
-        'top',
-        'bottom',
-        'display',
+        'width', 'min-width', 'max-width',
+        'height', 'min-height', 'max-height',
+        'margin', 'margin-left', 'margin-right', 'margin-top', 'margin-bottom',
+        'padding', 'padding-left', 'padding-right', 'padding-top', 'padding-bottom',
+        'overflow', 'overflow-x', 'overflow-y',
+        'position', 'left', 'right', 'top', 'bottom', 'display',
       ]);
-
       return bodyStyles
         .split(';')
         .map(rule => rule.trim())
@@ -278,10 +263,114 @@ const Editor: React.FC<EditorProps> = ({
         .join(';\n      ');
     };
 
-    const scopeCSS = (css: string) => css
-      .replace(/body\s*{[^}]*}/, '')
-      .replace(/:root/g, '.editor-paper')
-      .replace(/(^|})\s*([a-z0-9][a-z0-9\-_]*|\.[a-z0-9][a-z0-9\-_]*|#[a-z0-9][a-z0-9\-_]*)/gi, '$1 .editor-paper $2');
+    /**
+     * 基于规则解析的 CSS 作用域函数。
+     * 替代之前有缺陷的单行正则，正确处理：
+     * - CSS 注释 (不修改)
+     * - 字符串/content 属性值 (不修改)
+     * - @media / @keyframes 等 at-rule (递归处理内部规则)
+     * - body 选择器 → .editor-paper
+     * - :root 选择器 → .editor-paper
+     * - 普通选择器 → 添加 .editor-paper 前缀
+     */
+    const scopeCSS = (css: string): string => {
+      // 第一步：去掉注释，保留位置信息不重要
+      const stripped = css.replace(/\/\*[\s\S]*?\*\//g, '');
+
+      const result: string[] = [];
+      let i = 0;
+
+      while (i < stripped.length) {
+        // 跳过空白
+        while (i < stripped.length && /\s/.test(stripped[i])) { i++; }
+        if (i >= stripped.length) break;
+
+        // 检测 @规则
+        if (stripped[i] === '@') {
+          const atStart = i;
+          // 读取到 { 或 ; (如 @import)
+          while (i < stripped.length && stripped[i] !== '{' && stripped[i] !== ';') { i++; }
+          const atHeader = stripped.slice(atStart, i).trim();
+
+          if (i < stripped.length && stripped[i] === ';') {
+            // 单行 @规则 (如 @import)，原样保留
+            result.push(atHeader + ';');
+            i++;
+            continue;
+          }
+
+          if (i < stripped.length && stripped[i] === '{') {
+            // 带块的 @规则
+            i++; // 跳过 {
+            // 读取匹配的 } (处理嵌套)
+            let depth = 1;
+            const blockStart = i;
+            while (i < stripped.length && depth > 0) {
+              if (stripped[i] === '{') depth++;
+              else if (stripped[i] === '}') depth--;
+              if (depth > 0) i++;
+            }
+            const blockContent = stripped.slice(blockStart, i);
+            i++; // 跳过 }
+
+            if (/^@(media|supports|layer)/i.test(atHeader)) {
+              // 可嵌套的 @规则：递归处理内部
+              result.push(`${atHeader} {\n${scopeCSS(blockContent)}\n}`);
+            } else {
+              // @keyframes / @font-face 等：原样保留
+              result.push(`${atHeader} {${blockContent}}`);
+            }
+            continue;
+          }
+        }
+
+        // 普通规则：读取选择器（到 { 为止）
+        const ruleStart = i;
+        while (i < stripped.length && stripped[i] !== '{') { i++; }
+        if (i >= stripped.length) break;
+
+        const rawSelector = stripped.slice(ruleStart, i).trim();
+        i++; // 跳过 {
+
+        // 读取声明块（到匹配的 } 为止）
+        let depth = 1;
+        const declStart = i;
+        while (i < stripped.length && depth > 0) {
+          if (stripped[i] === '{') depth++;
+          else if (stripped[i] === '}') depth--;
+          if (depth > 0) i++;
+        }
+        const declarations = stripped.slice(declStart, i).trim();
+        i++; // 跳过 }
+
+        if (!rawSelector) continue;
+
+        // 处理选择器列表（逗号分隔）
+        const scopedSelectors = rawSelector.split(',').map(sel => {
+          sel = sel.trim();
+          if (!sel) return '';
+
+          // body / html → 替换为 .editor-paper
+          if (/^(body|html)(\s|$|\.|#|\[|:|,)/i.test(sel) || /^(body|html)$/i.test(sel)) {
+            return sel.replace(/^(body|html)/i, '.editor-paper');
+          }
+
+          // :root → .editor-paper
+          if (sel.startsWith(':root')) {
+            return sel.replace(/^:root/, '.editor-paper');
+          }
+
+          // 其他选择器添加前缀
+          return `.editor-paper ${sel}`;
+        }).filter(Boolean).join(', ');
+
+        if (scopedSelectors) {
+          result.push(`${scopedSelectors} {\n  ${declarations}\n}`);
+        }
+      }
+
+      return result.join('\n');
+    };
 
     return `
     .editor-paper {
@@ -294,64 +383,6 @@ const Editor: React.FC<EditorProps> = ({
     ${scopeCSS(presetCss)}
     ${scopeCSS(project.customCSS)}
     ${scopeCSS(extraCSS)}
-
-    .editor-paper hr {
-      border: none;
-      border-top: 1px solid #ccc;
-      margin: 2em auto;
-      width: 100%;
-      position: relative;
-    }
-    .editor-paper hr.divider-1:after {
-      content: '* * *';
-      display: block;
-      text-align: center;
-      font-size: 1.2em;
-      color: #888;
-      margin-top: -0.7em;
-      background: white;
-      padding: 0 0.5em;
-    }
-    .editor-paper hr.divider-2:after {
-      content: '◈ ◈ ◈';
-      display: block;
-      text-align: center;
-      font-size: 1em;
-      color: #999;
-      margin-top: -0.7em;
-      background: white;
-      padding: 0 0.5em;
-    }
-    .editor-paper hr.divider-3:after {
-      content: '❀ ✿ ❀';
-      display: block;
-      text-align: center;
-      font-size: 1em;
-      color: #aaa;
-      margin-top: -0.7em;
-      background: white;
-      padding: 0 0.5em;
-    }
-    .editor-paper hr.divider-4:after {
-      content: '• • •';
-      display: block;
-      text-align: center;
-      font-size: 1.2em;
-      color: #999;
-      margin-top: -0.7em;
-      background: white;
-      padding: 0 0.5em;
-    }
-    .editor-paper hr.divider-5:after {
-      content: '～～～';
-      display: block;
-      text-align: center;
-      font-size: 1em;
-      color: #bbb;
-      margin-top: -0.7em;
-      background: white;
-      padding: 0 0.5em;
-    }
 
     .editor-paper .ProseMirror {
       outline: none !important;
@@ -428,9 +459,29 @@ const Editor: React.FC<EditorProps> = ({
         e.preventDefault();
         e.stopPropagation();
         if (await dialog.confirm('确认从文章中移除这个失效图片引用吗？')) {
-          target.remove();
-          const freshHTML = el.querySelector('.ProseMirror')?.innerHTML || '';
-          editor.commands.setContent(freshHTML, { emitUpdate: true });
+          // 通过 TipTap 事务系统删除节点，而不是直接操作 DOM
+          const { state } = editor;
+          let nodePos: number | null = null;
+          state.doc.descendants((node, pos) => {
+            if (nodePos !== null) return false; // 已找到，停止遍历
+            if (node.type.name === 'image') {
+              // 通过 view.nodeDOM 匹配点击的 DOM 元素
+              try {
+                const domNode = editor.view.nodeDOM(pos);
+                if (domNode === target || (domNode as Element)?.querySelector?.('img') === target) {
+                  nodePos = pos;
+                  return false;
+                }
+              } catch { /* ignore */ }
+            }
+          });
+
+          if (nodePos !== null) {
+            const node = state.doc.nodeAt(nodePos);
+            if (node) {
+              editor.chain().focus().deleteRange({ from: nodePos, to: nodePos + node.nodeSize }).run();
+            }
+          }
         }
       }
     };
