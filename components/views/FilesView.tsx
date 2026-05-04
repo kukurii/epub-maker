@@ -1,8 +1,9 @@
 import React, { useState } from 'react';
-import { Settings2, Library, BookOpen, FileType, Cloud, X, ChevronUp, ChevronDown } from 'lucide-react';
+import { Settings2, Library, BookOpen, FileType, Cloud, X, ChevronUp, ChevronDown, FileCode } from 'lucide-react';
 import { Chapter, ProjectData, ImageAsset, ExtraFile, Metadata } from '../../types';
 import { parseTxtToChapters } from '../../services/textParser';
 import { parseEpub } from '../../services/epubImport';
+import { parseHtmlToChapters } from '../../services/htmlParser';
 import { dialog } from '../../services/dialog';
 
 interface FilesViewProps {
@@ -12,7 +13,7 @@ interface FilesViewProps {
     onLoadingEnd: () => void;
 }
 
-type DragZoneType = 'txt' | 'epub' | 'batch' | null;
+type DragZoneType = 'txt' | 'epub' | 'html' | 'batch' | null;
 
 const FilesView: React.FC<FilesViewProps> = ({ onProjectUpdate, onChaptersLoaded, onLoadingStart, onLoadingEnd }) => {
     const [splitRegex, setSplitRegex] = useState<string>("^\\s*(Chapter\\s+\\d+|第[0-9一二三四五六七八九十百千]+[章回节]|序章|尾声|引子|[（(][0-9一二三四五六七八九十百千]+[)）])");
@@ -101,6 +102,49 @@ const FilesView: React.FC<FilesViewProps> = ({ onProjectUpdate, onChaptersLoaded
         } finally {
             onLoadingEnd();
         }
+    };
+
+    const processHtmlFile = async (file: File) => {
+        if (!file.name.toLowerCase().endsWith('.html') && !file.name.toLowerCase().endsWith('.htm')) {
+            await dialog.alert('请上传 .html 或 .htm 格式的文件');
+            return;
+        }
+        onLoadingStart('正在解析 HTML 文件...');
+        const reader = new FileReader();
+        reader.onload = (event) => {
+            try {
+                const htmlContent = event.target?.result as string;
+                const parsedChapters = parseHtmlToChapters(htmlContent);
+
+                onProjectUpdate({
+                    metadata: {
+                        title: file.name.replace(/\.(html|htm)$/i, ''),
+                        creator: '未知作者',
+                        language: 'zh',
+                        description: '',
+                        publisher: '',
+                        date: new Date().toISOString().split('T')[0],
+                        series: '',
+                        subjects: []
+                    },
+                    chapters: parsedChapters,
+                    images: [],
+                    cover: null,
+                    customCSS: ''
+                });
+
+                if (parsedChapters.length > 0) {
+                    onChaptersLoaded(parsedChapters, parsedChapters[0].id);
+                }
+            } catch (error) {
+                console.error(error);
+                dialog.alert('HTML 解析失败');
+            } finally {
+                onLoadingEnd();
+            }
+        };
+        reader.onerror = () => onLoadingEnd();
+        reader.readAsText(file);
     };
 
     const handleShowBatchOptions = async (files: FileList | File[]) => {
@@ -221,6 +265,12 @@ const FilesView: React.FC<FilesViewProps> = ({ onProjectUpdate, onChaptersLoaded
         e.target.value = ''; // Clear input
     };
 
+    const handleHtmlUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (file) processHtmlFile(file);
+        e.target.value = ''; // Clear input
+    };
+
     const handleBatchEpubUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
         const files = e.target.files;
         if (files) handleShowBatchOptions(files);
@@ -259,6 +309,8 @@ const FilesView: React.FC<FilesViewProps> = ({ onProjectUpdate, onChaptersLoaded
                 processTxtFile(files[0]);
             } else if (zone === 'epub') {
                 processEpubFile(files[0]);
+            } else if (zone === 'html') {
+                processHtmlFile(files[0]);
             } else if (zone === 'batch') {
                 handleShowBatchOptions(files);
             }
@@ -279,7 +331,7 @@ const FilesView: React.FC<FilesViewProps> = ({ onProjectUpdate, onChaptersLoaded
                     选择一个入口或拖入文件开始您的电子书制作之旅。
                 </p>
 
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 md:gap-6 mb-6 md:mb-10">
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-6 mb-6 md:mb-10">
                     {/* TXT Import */}
                     <label
                         className={`relative block w-full cursor-pointer group rounded-3xl transition-all duration-300 ${dragActive === 'txt' ? 'ring-4 ring-gray-400 scale-105 shadow-2xl' : 'active:scale-95'
@@ -321,6 +373,28 @@ const FilesView: React.FC<FilesViewProps> = ({ onProjectUpdate, onChaptersLoaded
                             )}
                             <span className="font-bold text-base md:text-lg mb-1">{dragActive === 'epub' ? '释放以解析 EPUB' : '导入 EPUB'}</span>
                             <span className="text-[10px] opacity-60">解析现有电子书</span>
+                        </div>
+                    </label>
+
+                    {/* HTML Import */}
+                    <label
+                        className={`relative block w-full cursor-pointer group rounded-3xl transition-all duration-300 ${dragActive === 'html' ? 'ring-4 ring-green-300 scale-105 shadow-2xl' : 'active:scale-95'
+                            }`}
+                        onDragEnter={(e) => handleDragEnter(e, 'html')}
+                        onDragLeave={handleDragLeave}
+                        onDragOver={handleDragOver}
+                        onDrop={(e) => handleDrop(e, 'html')}
+                    >
+                        <input type="file" accept=".html,.htm" onChange={handleHtmlUpload} className="hidden" />
+                        <div className={`w-full min-h-[140px] md:min-h-[180px] p-4 md:p-6 rounded-3xl shadow-xl flex flex-col items-center justify-center transition-colors border-2 border-transparent ${dragActive === 'html' ? 'bg-green-500 border-white/30' : 'bg-green-600 hover:bg-green-700'
+                            } text-white`}>
+                            {dragActive === 'html' ? (
+                                <Cloud size={32} className="mb-4 text-white animate-bounce" />
+                            ) : (
+                                <FileCode size={32} className="mb-2 md:mb-4 text-green-200 group-hover:text-white transition-colors" />
+                            )}
+                            <span className="font-bold text-base md:text-lg mb-1">{dragActive === 'html' ? '释放以导入 HTML' : '导入 HTML'}</span>
+                            <span className="text-[10px] opacity-60">智能识别结构</span>
                         </div>
                     </label>
 
