@@ -11,7 +11,7 @@ import React, { useEffect, useState, useCallback, useMemo, useRef } from 'react'
 import { AlignJustify, Clock } from 'lucide-react';
 import { useEditor, EditorContent } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
-import ImageExtension from '@tiptap/extension-image';
+import { CustomImage } from './extensions/CustomImage';
 import LinkExtension from '@tiptap/extension-link';
 import TextAlignExtension from '@tiptap/extension-text-align';
 import UnderlineExtension from '@tiptap/extension-underline';
@@ -67,7 +67,7 @@ const TextEditor: React.FC<TextEditorProps> = ({
         StarterKit.configure({ heading: false, horizontalRule: false }),
         CustomHeading.configure({ levels: [1, 2], HTMLAttributes: { class: 'heading' } }),
         CustomHorizontalRule,
-        ImageExtension.configure({ inline: false, HTMLAttributes: { class: 'editor-image' } }),
+        CustomImage.configure({ inline: false, HTMLAttributes: { class: 'editor-image' } }),
         LinkExtension.configure({ openOnClick: false, autolink: true }),
         UnderlineExtension,
         TextAlignExtension.configure({ types: ['heading', 'paragraph'] }),
@@ -162,7 +162,14 @@ const TextEditor: React.FC<TextEditorProps> = ({
       editor
         .chain()
         .focus()
-        .setImage({ src: img.data, alt: img.name, title: img.id })
+        .setImage({
+          src: img.data,
+          alt: img.name,
+          title: img.id,
+          // 同时写入 data-id 和 data-filename，确保保存时能正确匹配图片
+          'data-id': img.id,
+          'data-filename': img.name,
+        } as any)
         .run();
       setShowImagePicker(false);
     },
