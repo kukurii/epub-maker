@@ -4,12 +4,13 @@ import { Chapter, ImageAsset } from '../../types';
 import { analyzeImageUsages } from '../../services/analysis/book';
 import { dialog } from '../../services/dialog';
 import { sanitizeFilename } from '../text-editor/editorHelpers';
-import { generateNewImageFilename, renameImages } from '../../utils/imageNaming';
+import { generateImageFilename, generateNewImageFilename, renameImages, updateChapterImageReferences } from '../../utils/imageNaming';
 
 interface ImagesViewProps {
   images: ImageAsset[];
   chapters: Chapter[];
   onUpdateImages: (images: ImageAsset[]) => void;
+  onUpdateChapters?: (chapters: Chapter[]) => void;  // 🎯 新增：用于更新章节内容
   onLocateUsage: (chapterId: string, imageId: string) => void;
 }
 
@@ -107,7 +108,7 @@ const SkeletonCard: React.FC = () => (
   </div>
 );
 
-const ImagesView: React.FC<ImagesViewProps> = ({ images, chapters, onUpdateImages, onLocateUsage }) => {
+const ImagesView: React.FC<ImagesViewProps> = ({ images, chapters, onUpdateImages, onUpdateChapters, onLocateUsage }) => {
   const [dragActive, setDragActive] = useState(false);
   const [loadingFiles, setLoadingFiles] = useState<string[]>([]);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -209,15 +210,31 @@ const ImagesView: React.FC<ImagesViewProps> = ({ images, chapters, onUpdateImage
   // 🎯 批量重命名功能
   const handleBulkRename = async () => {
     const confirmed = await dialog.confirm(
-      `将所有图片重命名为：img_001, img_002, img_003 ...\n\n这将影响 ${images.length} 张图片，确定继续吗？`
+      `将所有图片重命名为：img_001, img_002, img_003 ...\n\n这将影响 ${images.length} 张图片和所有章节引用，确定继续吗？`
     );
     if (!confirmed) return;
 
-    // 重命名所有图片
-    const renamedImages = renameImages(images);
-    onUpdateImages(renamedImages);
+    try {
+      // 1. 重命名所有图片（只改文件名，ID 保持不变）
+      const { images: renamedImages, oldNameMap } = renameImages(images);
 
-    alert(`成功重命名 ${images.length} 张图片！`);
+      // 2. 更新所有章节内容中的图片引用
+      const updatedChapters = updateChapterImageReferences(chapters, oldNameMap);
+
+      // 3. 一次性更新图片和章节数据
+      onUpdateImages(renamedImages);
+      if (onUpdateChapters) {
+        onUpdateChapters(updatedChapters);
+      }
+
+      await dialog.alert(
+        `✅ 成功重命名 ${images.length} 张图片！\n\n` +
+        `已同步更新所有章节中的图片引用。`
+      );
+    } catch (error) {
+      console.error('批量重命名失败:', error);
+      await dialog.alert(`❌ 重命名失败：${error instanceof Error ? error.message : '未知错误'}`);
+    }
   };
 
   const toggleSelectAll = () => {

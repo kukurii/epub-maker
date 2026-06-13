@@ -185,6 +185,7 @@ const ViewContainer: React.FC<ViewContainerProps> = ({
           images={project.images}
           chapters={project.chapters}
           onUpdateImages={(images) => onUpdateProject({ images })}
+          onUpdateChapters={onUpdateChapters}
           onLocateUsage={onFocusImageReference}
         />
       );
