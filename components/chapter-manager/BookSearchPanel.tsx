@@ -1,6 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import { Chapter } from '../../types';
-import { searchChapters } from '../../services/bookAnalysis';
+import { searchChapters } from '../../services/analysis/book';
 
 interface BookSearchPanelProps {
   chapters: Chapter[];

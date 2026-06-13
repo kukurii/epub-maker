@@ -1,4 +1,4 @@
-import { Chapter, ImageAsset, TocItem } from '../types';
+import { Chapter, ImageAsset, TocItem } from '../../types';
 
 export interface ChapterImageUsage {
   imageId: string;

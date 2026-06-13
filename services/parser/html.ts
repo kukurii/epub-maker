@@ -1,4 +1,4 @@
-import { Chapter } from '../types';
+import { Chapter } from '../../types';
 
 /**
  * 生成唯一的章节 ID
