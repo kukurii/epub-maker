@@ -1,8 +1,10 @@
 import React, { useMemo, useRef, useState } from 'react';
-import { Trash2, UploadCloud, Image as ImageIcon, FileText, CheckCircle2, Circle, LocateFixed, Link2 } from 'lucide-react';
+import { Trash2, UploadCloud, Image as ImageIcon, FileText, CheckCircle2, Circle, LocateFixed, Link2, RefreshCw } from 'lucide-react';
 import { Chapter, ImageAsset } from '../../types';
-import { analyzeImageUsages } from '../../services/bookAnalysis';
+import { analyzeImageUsages } from '../../services/analysis/book';
 import { dialog } from '../../services/dialog';
+import { sanitizeFilename } from '../text-editor/editorHelpers';
+import { generateNewImageFilename, renameImages } from '../../utils/imageNaming';
 
 interface ImagesViewProps {
   images: ImageAsset[];
@@ -131,10 +133,17 @@ const ImagesView: React.FC<ImagesViewProps> = ({ images, chapters, onUpdateImage
       if (!isNaN(n) && n > maxId) maxId = n;
     });
 
-    const newAssets = rawAssets.map((asset, index) => ({
-      ...asset,
-      id: (maxId + 1 + index).toString().padStart(3, '0')
-    }));
+    // 🎯 使用统一的命名规则：img_001.jpg, img_002.png, ...
+    const newAssets = rawAssets.map((asset, index) => {
+      const newIndex = maxId + 1 + index;
+      const newName = generateImageFilename(newIndex, asset.name);
+
+      return {
+        ...asset,
+        id: newIndex.toString().padStart(3, '0'),
+        name: sanitizeFilename(newName)  // 🔧 使用统一命名 + 清理文件名
+      };
+    });
 
     const updatedImages = [...images, ...newAssets];
     onUpdateImages(updatedImages);
@@ -195,6 +204,20 @@ const ImagesView: React.FC<ImagesViewProps> = ({ images, chapters, onUpdateImage
     onUpdateImages(images.filter(img => !selectedIds.has(img.id)));
     setSelectedIds(new Set());
     setIsSelectionMode(false);
+  };
+
+  // 🎯 批量重命名功能
+  const handleBulkRename = async () => {
+    const confirmed = await dialog.confirm(
+      `将所有图片重命名为：img_001, img_002, img_003 ...\n\n这将影响 ${images.length} 张图片，确定继续吗？`
+    );
+    if (!confirmed) return;
+
+    // 重命名所有图片
+    const renamedImages = renameImages(images);
+    onUpdateImages(renamedImages);
+
+    alert(`成功重命名 ${images.length} 张图片！`);
   };
 
   const toggleSelectAll = () => {
@@ -259,7 +282,17 @@ const ImagesView: React.FC<ImagesViewProps> = ({ images, chapters, onUpdateImage
               </button>
             </>
           ) : (
-            <span className="text-xs md:text-sm font-medium text-gray-400 bg-white px-3 py-1 rounded-full border border-gray-200">{images.length} 张图片</span>
+            <>
+              <button
+                onClick={handleBulkRename}
+                className="flex items-center gap-2 text-sm font-medium text-indigo-600 hover:text-indigo-700 bg-indigo-50 hover:bg-indigo-100 px-3 py-1.5 rounded-lg transition-colors"
+                title="将所有图片重命名为 img_001, img_002, ..."
+              >
+                <RefreshCw size={16} />
+                批量重命名
+              </button>
+              <span className="text-xs md:text-sm font-medium text-gray-400 bg-white px-3 py-1 rounded-full border border-gray-200">{images.length} 张图片</span>
+            </>
           )}
         </div>
       </div>
