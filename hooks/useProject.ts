@@ -182,8 +182,9 @@ export const useProject = () => {
 
             const afterMeta = parseMeta(afterContent, '新章节 (切分)');
 
+            // 使用更安全的 ID 生成方式
             const newChapter: Chapter = {
-                id: Date.now().toString(),
+                id: `${Date.now()}_${Math.random().toString(36).substring(2, 9)}`,
                 title: afterMeta.title,
                 content: afterContent,
                 level: currentChapter.level,

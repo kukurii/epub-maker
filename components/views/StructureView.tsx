@@ -77,12 +77,11 @@ const StructureView: React.FC<StructureViewProps> = ({ project, onUpdateProject 
         let total = 0;
 
         const images: FileNode[] = (project.images || []).map((img) => {
-            const ext = img.type.includes('png') ? 'png' : img.type.includes('gif') ? 'gif' : 'jpg';
             const size = getImageByteSize(img.data);
             total += size;
             return {
                 id: `img-${img.id}`,
-                name: `img_${img.id}.${ext}`,
+                name: img.name, // 使用原始文件名
                 type: 'file',
                 fileType: 'image',
                 sizeBytes: size,

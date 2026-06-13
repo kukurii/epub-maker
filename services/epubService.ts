@@ -57,21 +57,17 @@ export const generateEpub = async (project: ProjectData) => {
   // --- Images Processing ---
   const imageMapByName = new Map<string, string>();
   const imageMapById = new Map<string, string>();
-  
+
   project.images.forEach((img) => {
     const imgData = img.data.split(',')[1];
-    // Get extension
-    let ext = 'jpg';
-    if (img.type.includes('png')) ext = 'png';
-    else if (img.type.includes('gif')) ext = 'gif';
-    else if (img.type.includes('webp')) ext = 'webp';
 
-    const uniqueFilename = `img_${img.id}.${ext}`;
-    
-    imageMapByName.set(img.name, uniqueFilename);
-    imageMapById.set(img.id, uniqueFilename);
-    
-    oebps.file(`images/${uniqueFilename}`, imgData, { base64: true });
+    // 使用原始文件名，不再重命名
+    const originalFilename = img.name;
+
+    imageMapByName.set(img.name, originalFilename);
+    imageMapById.set(img.id, originalFilename);
+
+    oebps.file(`images/${originalFilename}`, imgData, { base64: true });
   });
 
   // --- Cover Logic ---
@@ -82,9 +78,9 @@ export const generateEpub = async (project: ProjectData) => {
   if (project.coverId) {
       const referencedImg = project.images.find(i => i.id === project.coverId);
       if (referencedImg) {
-          const uniqueName = imageMapById.get(referencedImg.id);
-          if (uniqueName) {
-              coverFilename = `images/${uniqueName}`;
+          const originalName = imageMapById.get(referencedImg.id);
+          if (originalName) {
+              coverFilename = `images/${originalName}`;
               isCoverFromImages = true;
           }
       }
@@ -234,9 +230,9 @@ export const generateEpub = async (project: ProjectData) => {
   }
 
   project.images.forEach((img) => {
-    const uniqueName = imageMapById.get(img.id);
-    if (uniqueName) {
-        manifestItems += `<item id="img_${img.id}" href="images/${uniqueName}" media-type="${img.type}"/>\n`;
+    const originalName = imageMapById.get(img.id);
+    if (originalName) {
+        manifestItems += `<item id="img_${img.id}" href="images/${originalName}" media-type="${img.type}"/>\n`;
     }
   });
 
@@ -557,14 +553,9 @@ export const parseEpub = async (file: File, options?: { imageStartId?: number })
 
                         if (imagePathMap.has(imageZipPath)) {
                             const asset = imagePathMap.get(imageZipPath)!;
-                            
-                            const getExtension = (type: string): string => {
-                                if (type.includes('png')) return 'png';
-                                if (type.includes('gif')) return 'gif';
-                                if (type.includes('webp')) return 'webp';
-                                return 'jpg';
-                            }
-                            const relativePath = `images/img_${asset.id}.${getExtension(asset.type)}`;
+
+                            // 使用原始文件名，不再重命名
+                            const relativePath = `images/${asset.name}`;
 
                             img.setAttribute(srcAttr, relativePath);
                             img.setAttribute('data-id', asset.id);

@@ -1,16 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { Sparkles, Loader2, Code, Settings, X, Key, Plus, ChevronDown, ChevronUp, BookTemplate, Info, ArrowRight, ExternalLink } from 'lucide-react';
 import { ProjectData, Chapter } from '../../types';
-import { GoogleGenAI } from '@google/genai';
-import { dialog } from '../../services/dialog';
+import { useAiGeneration } from '../../hooks/useAiGeneration';
 import { contentToEditorHTML } from '../text-editor/editorHelpers';
 import { getTocTitle } from '../../services/toc';
 import { PRESET_STYLES } from '../../themes';
-
-const getEnvGeminiApiKey = () => {
-    const env = (import.meta as any).env || {};
-    return env.VITE_GEMINI_API_KEY || env.GEMINI_API_KEY || (globalThis as any).__GEMINI_API_KEY__ || '';
-};
 
 interface StylesViewProps {
     project: ProjectData;
@@ -181,7 +175,6 @@ pre {
 
 const StylesView: React.FC<StylesViewProps> = ({ project, activeChapter, onUpdateProject }) => {
     const [aiPrompt, setAiPrompt] = useState('');
-    const [isAiGenerating, setIsAiGenerating] = useState(false);
     const [stylePreviewMode, setStylePreviewMode] = useState<'chapter' | 'toc'>('chapter');
     const [showSnippets, setShowSnippets] = useState(false);
     const [showApiConfig, setShowApiConfig] = useState(false);
@@ -191,6 +184,14 @@ const StylesView: React.FC<StylesViewProps> = ({ project, activeChapter, onUpdat
     const [infoSnippet, setInfoSnippet] = useState<SnippetItem | null>(null);
 
     const isPresetActive = project.isPresetStyleActive !== false;
+
+    // 🔧 使用 AI 生成 Hook
+    const aiGeneration = useAiGeneration({
+        apiKey: userApiKey,
+        onSuccess: (result) => {
+            onUpdateProject({ customCSS: result });
+        }
+    });
 
     useEffect(() => {
         const storedKey = localStorage.getItem('epub_maker_gemini_key');
@@ -206,25 +207,12 @@ const StylesView: React.FC<StylesViewProps> = ({ project, activeChapter, onUpdat
     };
 
     const handleAiGenerateCss = async () => {
-        if (!aiPrompt || isAiGenerating) return;
+        if (!aiPrompt || aiGeneration.loading) return;
 
-        // Prioritize user-provided key, fallback to env key
-        const apiKey = userApiKey || getEnvGeminiApiKey();
+        const activeStyle = PRESET_STYLES.find(s => s.id === project.activeStyleId) || PRESET_STYLES[0];
+        const baseCssForContext = isPresetActive ? activeStyle.css : '/* No base theme active. Generate from scratch. */ body { font-family: sans-serif; }';
 
-        if (!apiKey) {
-            await dialog.alert("请先点击设置按钮配置 Gemini API Key");
-            setShowApiConfig(true);
-            return;
-        }
-
-        setIsAiGenerating(true);
-        try {
-            const ai = new GoogleGenAI({ apiKey });
-
-            const activeStyle = PRESET_STYLES.find(s => s.id === project.activeStyleId) || PRESET_STYLES[0];
-            const baseCssForContext = isPresetActive ? activeStyle.css : '/* No base theme active. Generate from scratch. */ body { font-family: sans-serif; }';
-
-            const fullPrompt = `
+        const fullPrompt = `
         You are an expert ebook developer and designer specializing in CSS for EPUB 3 files.
         Your task is to generate CSS code based on a user's request to style a book's content.
         The user is working with a base stylesheet. You should generate *only* the additional or overriding CSS code.
@@ -252,23 +240,7 @@ const StylesView: React.FC<StylesViewProps> = ({ project, activeChapter, onUpdat
         Now, generate the custom CSS code.
         `;
 
-            const response = await ai.models.generateContent({
-                model: 'gemini-3-flash-preview',
-                contents: fullPrompt
-            });
-
-            const generatedCss = response.text?.replace(/```css/g, '').replace(/```/g, '').trim() || '';
-
-            if (generatedCss) {
-                onUpdateProject({ customCSS: generatedCss });
-            }
-
-        } catch (error) {
-            console.error("AI CSS generation failed:", error);
-            await dialog.alert("AI 样式生成失败，请检查 API Key 是否正确或网络连接。");
-        } finally {
-            setIsAiGenerating(false);
-        }
+        await aiGeneration.generate(fullPrompt);
     };
 
     const insertSnippet = (code: string) => {
@@ -413,9 +385,9 @@ const StylesView: React.FC<StylesViewProps> = ({ project, activeChapter, onUpdat
 
                     <div className="bg-gradient-to-br from-blue-50 to-indigo-50 p-4 rounded-xl border border-blue-100 space-y-3 mb-6">
                         <textarea className="w-full h-20 bg-white/70 text-sm p-3 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none shadow-inner" placeholder="请用自然语言描述您想要的样式...&#10;例如：我想要复古羊皮纸的感觉，图片带一点棕褐色调。" value={aiPrompt} onChange={(e) => setAiPrompt(e.target.value)} />
-                        <button onClick={handleAiGenerateCss} disabled={isAiGenerating || !aiPrompt} className="w-full bg-blue-600 hover:bg-blue-700 text-white py-2.5 px-4 rounded-lg flex items-center justify-center transition-all shadow-md shadow-blue-500/20 active:scale-95 font-semibold text-sm disabled:bg-blue-300 disabled:cursor-not-allowed">
-                            {isAiGenerating ? <Loader2 size={16} className="mr-2 animate-spin" /> : <Sparkles size={16} className="mr-2" />}
-                            {isAiGenerating ? '正在施展魔法...' : '生成样式'}
+                        <button onClick={handleAiGenerateCss} disabled={aiGeneration.loading || !aiPrompt} className="w-full bg-blue-600 hover:bg-blue-700 text-white py-2.5 px-4 rounded-lg flex items-center justify-center transition-all shadow-md shadow-blue-500/20 active:scale-95 font-semibold text-sm disabled:bg-blue-300 disabled:cursor-not-allowed">
+                            {aiGeneration.loading ? <Loader2 size={16} className="mr-2 animate-spin" /> : <Sparkles size={16} className="mr-2" />}
+                            {aiGeneration.loading ? '正在施展魔法...' : '生成样式'}
                         </button>
                     </div>
 

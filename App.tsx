@@ -1,11 +1,11 @@
 import React, { useState } from 'react';
 import { ViewMode } from './types';
-import Sidebar from './components/Sidebar';
+import Sidebar from './components/layout/Sidebar';
 import { generateEpub } from './services/epubExport';
 import { Menu, PowerOff, Cloud, CheckCircle2, AlertTriangle } from 'lucide-react';
 
-import LoadingOverlay from './components/LoadingOverlay';
-import ViewContainer from './components/ViewContainer';
+import LoadingOverlay from './components/layout/LoadingOverlay';
+import ViewContainer from './components/layout/ViewContainer';
 import { useProject } from './hooks/useProject';
 import { useAutoSave } from './hooks/useAutoSave';
 import GlobalDialogs from './components/ui/GlobalDialogs';

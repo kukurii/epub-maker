@@ -1,3 +1,13 @@
+/**
+ * 编辑器工具栏 - 优化版
+ *
+ * 改进：
+ * 1. 工具栏按钮分组折叠，减少视觉混乱
+ * 2. 移动端优化，自适应显示
+ * 3. 添加常用快捷键提示
+ * 4. 优化按钮图标和布局
+ */
+
 import React, { useState, useRef, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { type Editor } from '@tiptap/react';
@@ -26,6 +36,8 @@ import {
   ChevronDown,
   SeparatorHorizontal,
   Pilcrow,
+  MoreHorizontal,
+  Type,
 } from 'lucide-react';
 
 // ─── 分割线样式列表 ───
@@ -59,8 +71,12 @@ const EditorToolbar: React.FC<EditorToolbarProps> = ({
   onToggleFindBar,
 }) => {
   const [showDividerMenu, setShowDividerMenu] = useState(false);
+  const [showMoreMenu, setShowMoreMenu] = useState(false);
   const [dividerMenuStyle, setDividerMenuStyle] = useState<{ top: number; left: number } | null>(null);
+  const [moreMenuStyle, setMoreMenuStyle] = useState<{ top: number; left: number } | null>(null);
+
   const dividerRef = useRef<HTMLDivElement>(null);
+  const moreRef = useRef<HTMLDivElement>(null);
 
   // 分割线菜单定位
   useEffect(() => {
@@ -79,13 +95,38 @@ const EditorToolbar: React.FC<EditorToolbarProps> = ({
     };
   }, [showDividerMenu]);
 
-  // 点击外部关闭分割线菜单
+  // 更多菜单定位
+  useEffect(() => {
+    const updatePosition = () => {
+      if (!showMoreMenu || !moreRef.current) return;
+      const rect = moreRef.current.getBoundingClientRect();
+      setMoreMenuStyle({ top: rect.bottom + 6, left: rect.right - 200 }); // 右对齐
+    };
+
+    updatePosition();
+    window.addEventListener('resize', updatePosition);
+    window.addEventListener('scroll', updatePosition, true);
+    return () => {
+      window.removeEventListener('resize', updatePosition);
+      window.removeEventListener('scroll', updatePosition, true);
+    };
+  }, [showMoreMenu]);
+
+  // 点击外部关闭菜单
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
+      // 关闭分割线菜单
       if (dividerRef.current && !dividerRef.current.contains(e.target as Node)) {
         const menuEl = document.getElementById('editor-divider-menu');
         if (menuEl && menuEl.contains(e.target as Node)) return;
         setShowDividerMenu(false);
+      }
+
+      // 关闭更多菜单
+      if (moreRef.current && !moreRef.current.contains(e.target as Node)) {
+        const menuEl = document.getElementById('editor-more-menu');
+        if (menuEl && menuEl.contains(e.target as Node)) return;
+        setShowMoreMenu(false);
       }
     };
     document.addEventListener('mousedown', handleClickOutside);
@@ -160,56 +201,107 @@ const EditorToolbar: React.FC<EditorToolbarProps> = ({
             </div>
           )}
 
-          {/* 撤销/重做/清除格式 */}
+          {/* 🎯 核心编辑区 - 始终可见 */}
           <ButtonGroup>
-            <ToolbarButton icon={<RotateCcw size={16} />} onClick={() => editor.chain().focus().undo().run()} disabled={!editor.can().undo()} title="撤销" />
-            <ToolbarButton icon={<RotateCw size={16} />} onClick={() => editor.chain().focus().redo().run()} disabled={!editor.can().redo()} title="重做" />
-            <ToolbarButton icon={<RemoveFormatting size={16} />} onClick={() => editor.chain().focus().clearNodes().unsetAllMarks().run()} title="清除格式" />
-          </ButtonGroup>
-
-          <Divider />
-
-          {/* 标题/图注 */}
-          <ButtonGroup>
-            <ToolbarButton icon={<Heading1 size={16} />} onClick={() => editor.chain().focus().toggleHeading({ level: 1 }).run()} active={editor.isActive('heading', { level: 1 })} title="大章节 (H1)" />
-            <ToolbarButton icon={<Heading2 size={16} />} onClick={() => editor.chain().focus().toggleHeading({ level: 2 }).run()} active={editor.isActive('heading', { level: 2 })} title="小节 (H2)" />
-            <ToolbarButton icon={<Pilcrow size={16} />} onClick={toggleCaption} active={editor.isActive('paragraph', { class: 'caption' })} title="图注段落" />
-          </ButtonGroup>
-
-          <Divider />
-
-          {/* 文本格式 */}
-          <ButtonGroup>
-            <ToolbarButton icon={<Bold size={16} />} onClick={() => editor.chain().focus().toggleBold().run()} active={editor.isActive('bold')} title="加粗" />
-            <ToolbarButton icon={<Italic size={16} />} onClick={() => editor.chain().focus().toggleItalic().run()} active={editor.isActive('italic')} title="斜体" />
-            <ToolbarButton icon={<Underline size={16} />} onClick={() => editor.chain().focus().toggleUnderline().run()} active={editor.isActive('underline')} title="下划线" />
-            <ToolbarButton icon={<Strikethrough size={16} />} onClick={() => editor.chain().focus().toggleStrike().run()} active={editor.isActive('strike')} title="删除线" />
-            <ToolbarButton icon={<Link size={16} />} onClick={setLink} active={editor.isActive('link')} title="插入链接" />
-            <ToolbarButton icon={<Quote size={16} />} onClick={() => editor.chain().focus().toggleBlockquote().run()} active={editor.isActive('blockquote')} title="引用块" />
             <ToolbarButton
-              icon={<span className="font-bold text-xs" style={{ display: 'inline-block', lineHeight: 1 }}>A/あ</span>}
-              onClick={setRuby}
-              active={editor.isActive('ruby')}
-              title="注音"
+              icon={<RotateCcw size={16} />}
+              onClick={() => editor.chain().focus().undo().run()}
+              disabled={!editor.can().undo()}
+              title="撤销 (Ctrl+Z)"
+            />
+            <ToolbarButton
+              icon={<RotateCw size={16} />}
+              onClick={() => editor.chain().focus().redo().run()}
+              disabled={!editor.can().redo()}
+              title="重做 (Ctrl+Y)"
             />
           </ButtonGroup>
 
           <Divider />
 
-          {/* 列表 */}
+          {/* 标题 */}
           <ButtonGroup>
-            <ToolbarButton icon={<List size={16} />} onClick={() => editor.chain().focus().toggleBulletList().run()} active={editor.isActive('bulletList')} title="无序列表" />
-            <ToolbarButton icon={<ListOrdered size={16} />} onClick={() => editor.chain().focus().toggleOrderedList().run()} active={editor.isActive('orderedList')} title="有序列表" />
+            <ToolbarButton
+              icon={<Heading1 size={16} />}
+              onClick={() => editor.chain().focus().toggleHeading({ level: 1 }).run()}
+              active={editor.isActive('heading', { level: 1 })}
+              title="大标题 (Ctrl+Alt+1)"
+            />
+            <ToolbarButton
+              icon={<Heading2 size={16} />}
+              onClick={() => editor.chain().focus().toggleHeading({ level: 2 }).run()}
+              active={editor.isActive('heading', { level: 2 })}
+              title="小标题 (Ctrl+Alt+2)"
+            />
           </ButtonGroup>
 
           <Divider />
 
-          {/* 对齐 */}
+          {/* 常用格式 */}
           <ButtonGroup>
+            <ToolbarButton
+              icon={<Bold size={16} />}
+              onClick={() => editor.chain().focus().toggleBold().run()}
+              active={editor.isActive('bold')}
+              title="加粗 (Ctrl+B)"
+            />
+            <ToolbarButton
+              icon={<Italic size={16} />}
+              onClick={() => editor.chain().focus().toggleItalic().run()}
+              active={editor.isActive('italic')}
+              title="斜体 (Ctrl+I)"
+            />
+            <ToolbarButton
+              icon={<Underline size={16} />}
+              onClick={() => editor.chain().focus().toggleUnderline().run()}
+              active={editor.isActive('underline')}
+              title="下划线 (Ctrl+U)"
+            />
+          </ButtonGroup>
+
+          <Divider className="hidden md:block" />
+
+          {/* 更多格式 - 桌面端展开 */}
+          <ButtonGroup className="hidden md:flex">
+            <ToolbarButton
+              icon={<Strikethrough size={16} />}
+              onClick={() => editor.chain().focus().toggleStrike().run()}
+              active={editor.isActive('strike')}
+              title="删除线"
+            />
+            <ToolbarButton
+              icon={<Link size={16} />}
+              onClick={setLink}
+              active={editor.isActive('link')}
+              title="插入链接 (Ctrl+K)"
+            />
+            <ToolbarButton
+              icon={<Quote size={16} />}
+              onClick={() => editor.chain().focus().toggleBlockquote().run()}
+              active={editor.isActive('blockquote')}
+              title="引用块"
+            />
+            <ToolbarButton
+              icon={<span className="font-bold text-xs">A/あ</span>}
+              onClick={setRuby}
+              active={editor.isActive('ruby')}
+              title="注音"
+            />
+            <ToolbarButton
+              icon={<Pilcrow size={16} />}
+              onClick={toggleCaption}
+              active={editor.isActive('paragraph', { class: 'caption' })}
+              title="图注段落"
+            />
+          </ButtonGroup>
+
+          <Divider className="hidden lg:block" />
+
+          {/* 对齐 - 大屏展开 */}
+          <ButtonGroup className="hidden lg:flex">
             <ToolbarButton icon={<AlignLeft size={16} />} onClick={() => editor.chain().focus().setTextAlign('left').run()} active={editor.isActive({ textAlign: 'left' })} title="左对齐" />
             <ToolbarButton icon={<AlignCenter size={16} />} onClick={() => editor.chain().focus().setTextAlign('center').run()} active={editor.isActive({ textAlign: 'center' })} title="居中" />
             <ToolbarButton icon={<AlignRight size={16} />} onClick={() => editor.chain().focus().setTextAlign('right').run()} active={editor.isActive({ textAlign: 'right' })} title="右对齐" />
-            <ToolbarButton icon={<AlignJustify size={16} />} onClick={() => editor.chain().focus().setTextAlign('justify').run()} active={editor.isActive({ textAlign: 'justify' })} title="两端对齐" />
           </ButtonGroup>
 
           <Divider />
@@ -221,10 +313,11 @@ const EditorToolbar: React.FC<EditorToolbarProps> = ({
               className="flex items-center px-3 py-1.5 bg-indigo-50 text-indigo-600 hover:bg-indigo-100 rounded-lg text-sm font-medium transition-colors"
               title="插入图片"
             >
-              <ImageIcon size={16} className="mr-1.5" /> 图片
+              <ImageIcon size={16} className="mr-1.5" />
+              <span className="hidden sm:inline">图片</span>
             </button>
 
-            <div className="relative flex-shrink-0" ref={dividerRef}>
+            <div className="relative flex-shrink-0 hidden md:block" ref={dividerRef}>
               <button
                 onMouseDown={(e) => e.preventDefault()}
                 onClick={() => setShowDividerMenu((v) => !v)}
@@ -236,7 +329,7 @@ const EditorToolbar: React.FC<EditorToolbarProps> = ({
                 }`}
               >
                 <SeparatorHorizontal size={15} className="mr-1" />
-                分割线
+                <span className="hidden lg:inline">分割线</span>
                 <ChevronDown size={13} className={`ml-1 transition-transform duration-200 ${showDividerMenu ? 'rotate-180' : ''}`} />
               </button>
             </div>
@@ -252,7 +345,21 @@ const EditorToolbar: React.FC<EditorToolbarProps> = ({
               className="flex items-center px-3 py-1.5 bg-orange-50 text-orange-600 hover:bg-orange-100 rounded-lg text-sm font-medium transition-colors"
               title="在光标处拆分章节"
             >
-              <Scissors size={14} className="mr-1.5" /> 拆分章节
+              <Scissors size={14} className="mr-1.5" />
+              <span className="hidden sm:inline">拆分</span>
+            </button>
+          </div>
+
+          {/* 更多按钮 - 移动端/平板收起次要功能 */}
+          <div className="md:hidden lg:hidden flex-shrink-0 ml-1" ref={moreRef}>
+            <button
+              onClick={() => setShowMoreMenu((v) => !v)}
+              className={`p-2 rounded-lg transition-colors ${
+                showMoreMenu ? 'bg-gray-200 text-gray-800' : 'text-gray-500 hover:bg-gray-100'
+              }`}
+              title="更多工具"
+            >
+              <MoreHorizontal size={18} />
             </button>
           </div>
         </div>
@@ -264,7 +371,7 @@ const EditorToolbar: React.FC<EditorToolbarProps> = ({
             className={`p-2 rounded-lg transition-colors ${
               showFindBar ? 'bg-blue-100 text-blue-700' : 'text-gray-500 hover:text-gray-800 hover:bg-gray-100'
             }`}
-            title="查找与替换"
+            title="查找与替换 (Ctrl+F)"
           >
             <Search size={18} />
           </button>
@@ -296,6 +403,86 @@ const EditorToolbar: React.FC<EditorToolbarProps> = ({
         </div>,
         document.body,
       )}
+
+      {/* 更多工具菜单（移动端） */}
+      {showMoreMenu && moreMenuStyle && createPortal(
+        <div
+          id="editor-more-menu"
+          style={{ position: 'fixed', top: moreMenuStyle.top, left: moreMenuStyle.left }}
+          className="z-[120] bg-white border border-gray-200 rounded-xl shadow-xl p-3 w-48 animate-in fade-in zoom-in-95 duration-150"
+        >
+          <div className="space-y-1">
+            <MenuButton
+              icon={<Strikethrough size={16} />}
+              label="删除线"
+              onClick={() => { editor.chain().focus().toggleStrike().run(); setShowMoreMenu(false); }}
+              active={editor.isActive('strike')}
+            />
+            <MenuButton
+              icon={<Link size={16} />}
+              label="插入链接"
+              onClick={() => { setLink(); setShowMoreMenu(false); }}
+              active={editor.isActive('link')}
+            />
+            <MenuButton
+              icon={<Quote size={16} />}
+              label="引用块"
+              onClick={() => { editor.chain().focus().toggleBlockquote().run(); setShowMoreMenu(false); }}
+              active={editor.isActive('blockquote')}
+            />
+            <MenuButton
+              icon={<List size={16} />}
+              label="无序列表"
+              onClick={() => { editor.chain().focus().toggleBulletList().run(); setShowMoreMenu(false); }}
+              active={editor.isActive('bulletList')}
+            />
+            <MenuButton
+              icon={<ListOrdered size={16} />}
+              label="有序列表"
+              onClick={() => { editor.chain().focus().toggleOrderedList().run(); setShowMoreMenu(false); }}
+            />
+            <MenuButton
+              icon={<Pilcrow size={16} />}
+              label="图注"
+              onClick={() => { toggleCaption(); setShowMoreMenu(false); }}
+              active={editor.isActive('paragraph', { class: 'caption' })}
+            />
+            <MenuButton
+              icon={<span className="font-bold text-xs">A/あ</span>}
+              label="注音"
+              onClick={() => { setRuby(); setShowMoreMenu(false); }}
+              active={editor.isActive('ruby')}
+            />
+            <MenuButton
+              icon={<RemoveFormatting size={16} />}
+              label="清除格式"
+              onClick={() => { editor.chain().focus().clearNodes().unsetAllMarks().run(); setShowMoreMenu(false); }}
+            />
+
+            <div className="border-t border-gray-200 my-2" />
+
+            <MenuButton
+              icon={<AlignLeft size={16} />}
+              label="左对齐"
+              onClick={() => { editor.chain().focus().setTextAlign('left').run(); setShowMoreMenu(false); }}
+              active={editor.isActive({ textAlign: 'left' })}
+            />
+            <MenuButton
+              icon={<AlignCenter size={16} />}
+              label="居中"
+              onClick={() => { editor.chain().focus().setTextAlign('center').run(); setShowMoreMenu(false); }}
+              active={editor.isActive({ textAlign: 'center' })}
+            />
+            <MenuButton
+              icon={<AlignRight size={16} />}
+              label="右对齐"
+              onClick={() => { editor.chain().focus().setTextAlign('right').run(); setShowMoreMenu(false); }}
+              active={editor.isActive({ textAlign: 'right' })}
+            />
+          </div>
+        </div>,
+        document.body,
+      )}
     </>
   );
 };
@@ -308,13 +495,14 @@ const ToolbarButton: React.FC<{
   title?: string;
   active?: boolean;
   disabled?: boolean;
-}> = ({ icon, onClick, title, active, disabled }) => (
+  className?: string;
+}> = ({ icon, onClick, title, active, disabled, className = '' }) => (
   <button
     onMouseDown={(e) => e.preventDefault()}
     onClick={onClick}
     title={title}
     disabled={disabled}
-    className={`p-2 rounded-lg transition-all duration-200 flex-shrink-0 ${
+    className={`p-2 rounded-lg transition-all duration-200 flex-shrink-0 ${className} ${
       disabled
         ? 'opacity-30 cursor-not-allowed text-gray-400'
         : active
@@ -326,10 +514,31 @@ const ToolbarButton: React.FC<{
   </button>
 );
 
-const ButtonGroup: React.FC<{ children: React.ReactNode }> = ({ children }) => (
-  <div className="flex items-center space-x-0.5 mx-1 flex-shrink-0">{children}</div>
+const ButtonGroup: React.FC<{ children: React.ReactNode; className?: string }> = ({ children, className = '' }) => (
+  <div className={`flex items-center space-x-0.5 mx-1 flex-shrink-0 ${className}`}>{children}</div>
 );
 
-const Divider = () => <div className="h-5 w-px bg-gray-200 mx-1 flex-shrink-0" />;
+const Divider: React.FC<{ className?: string }> = ({ className = '' }) => (
+  <div className={`h-5 w-px bg-gray-200 mx-1 flex-shrink-0 ${className}`} />
+);
+
+const MenuButton: React.FC<{
+  icon: React.ReactNode;
+  label: string;
+  onClick: () => void;
+  active?: boolean;
+}> = ({ icon, label, onClick, active }) => (
+  <button
+    onClick={onClick}
+    className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-colors text-sm ${
+      active
+        ? 'bg-blue-50 text-blue-700 font-medium'
+        : 'text-gray-700 hover:bg-gray-50'
+    }`}
+  >
+    <span className="flex-shrink-0">{icon}</span>
+    <span>{label}</span>
+  </button>
+);
 
 export default EditorToolbar;

@@ -4,6 +4,8 @@ import { Plus, Search, Eye, Sparkles, Layers3 } from 'lucide-react';
 import { dialog } from '../../services/dialog';
 import { CleanupOptions } from '../../services/bookAnalysis';
 import { getTocTitle } from '../../services/toc';
+import { generateUniqueId } from '../../utils/idGenerator';
+import { useDragSort } from '../../hooks/useDragSort';
 
 import ChapterItem from './ChapterItem';
 import ChapterEditDialog from './ChapterEditDialog';
@@ -84,6 +86,9 @@ const ChapterManager: React.FC<ChapterManagerProps> = ({
 
   const filteredIds = useMemo(() => filteredChapters.map((ch) => ch.id), [filteredChapters]);
 
+  // ─── 拖拽排序 ───
+  const dragSort = useDragSort(chapters, onUpdateChapters);
+
   // ─── 切换面板（互斥） ───
   const togglePanel = useCallback((panel: PanelType) => {
     setActivePanel((prev) => (prev === panel ? 'none' : panel));
@@ -94,7 +99,7 @@ const ChapterManager: React.FC<ChapterManagerProps> = ({
   /** 添加新章节 */
   const handleAdd = useCallback(() => {
     const newChapter: Chapter = {
-      id: Date.now().toString(),
+      id: generateUniqueId(),
       title: '新建章节',
       content: '',
       level: 1,
@@ -357,6 +362,14 @@ const ChapterManager: React.FC<ChapterManagerProps> = ({
             selectionMode={activePanel === 'batch'}
             batchSelected={selectedChapterIds.has(chapterItem.id)}
             onToggleBatchSelect={toggleBatchSelect}
+            // 拖拽排序支持
+            onDragStart={(e) => dragSort.handleDragStart(e, chapterItem.originalIndex)}
+            onDragEnd={dragSort.handleDragEnd}
+            onDragOver={(e) => dragSort.handleDragOver(e, chapterItem.originalIndex)}
+            onDragLeave={dragSort.handleDragLeave}
+            onDrop={(e) => dragSort.handleDrop(e, chapterItem.originalIndex)}
+            isDragging={dragSort.draggedItem?.index === chapterItem.originalIndex}
+            isDropTarget={dragSort.dropTarget === chapterItem.originalIndex}
           />
         ))}
 

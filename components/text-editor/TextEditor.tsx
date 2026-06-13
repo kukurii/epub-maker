@@ -20,6 +20,7 @@ import { RubyMark } from './extensions/RubyMark';
 import { CustomHeading } from './extensions/CustomHeading';
 import { CustomHorizontalRule } from './extensions/CustomHorizontalRule';
 import { SearchHighlight } from './extensions/SearchHighlight';
+import { MarkdownShortcuts } from './extensions/MarkdownShortcuts';
 
 import { ProjectData, TocItem, ImageAsset } from '../../types';
 import EditorToolbar from './EditorToolbar';
@@ -29,6 +30,7 @@ import { dialog } from '../../services/dialog';
 import { contentToEditorHTML, editorHTMLToContent } from './editorHelpers';
 import { useEditorContent } from './useEditorContent';
 import { useEditorSearch } from './useEditorSearch';
+import { useImageUpload } from '../../hooks/useImageUpload';
 import { PRESET_STYLES } from '../../themes';
 
 interface TextEditorProps {
@@ -36,6 +38,7 @@ interface TextEditorProps {
   onContentChange: (newContent: string, title?: string, subItems?: TocItem[]) => void;
   onSplitChapter: (beforeContent: string, afterContent: string) => void;
   project: ProjectData;
+  onUpdateProject: (updates: Partial<ProjectData>) => void; // 🎯 添加这个，用于更新图片
   focusRequest?: {
     anchorId?: string | null;
     searchText?: string | null;
@@ -51,6 +54,7 @@ const TextEditor: React.FC<TextEditorProps> = ({
   onContentChange,
   onSplitChapter,
   project,
+  onUpdateProject,
   focusRequest,
   activeChapter,
   onMobileBack,
@@ -59,6 +63,27 @@ const TextEditor: React.FC<TextEditorProps> = ({
   const scrollRef = useRef<HTMLDivElement>(null);
   const [showImagePicker, setShowImagePicker] = useState(false);
   const [stats, setStats] = useState({ chars: 0, time: 0 });
+
+  // ─── 图片上传 Hook ───
+  const imageUpload = useImageUpload({
+    images: project.images, // 🔧 修复：传入当前图片列表用于生成正确的ID
+    onUpload: (image) => {
+      // 添加到项目图片库
+      const newImages = [...project.images, image];
+      onUpdateProject({ images: newImages });
+
+      // 自动插入到编辑器当前光标位置
+      if (editor) {
+        editor.chain().focus().setImage({
+          src: image.data,
+          alt: image.name,
+          title: image.id,
+          'data-id': image.id,
+          'data-filename': image.name,
+        } as any).run();
+      }
+    },
+  });
 
   // ─── 初始化 TipTap 编辑器 ───
   const editor = useEditor(
@@ -73,6 +98,7 @@ const TextEditor: React.FC<TextEditorProps> = ({
         TextAlignExtension.configure({ types: ['heading', 'paragraph'] }),
         RubyMark,
         SearchHighlight,
+        MarkdownShortcuts, // 🎯 Markdown 快捷输入
       ],
       content: contentToEditorHTML(content, project.images),
       editorProps: {
@@ -123,6 +149,12 @@ const TextEditor: React.FC<TextEditorProps> = ({
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [search.setShowFindBar, search.showFindBar]);
 
+  // ─── 粘贴图片处理 ───
+  useEffect(() => {
+    window.addEventListener('paste', imageUpload.handlePaste);
+    return () => window.removeEventListener('paste', imageUpload.handlePaste);
+  }, [imageUpload.handlePaste]);
+
   // ─── 外部跳转：锚点 ───
   useEffect(() => {
     if (!focusRequest?.anchorId || !containerRef.current) return;
@@ -163,7 +195,7 @@ const TextEditor: React.FC<TextEditorProps> = ({
         .chain()
         .focus()
         .setImage({
-          src: img.data,
+          src: img.data, // 🎯 使用 base64 数据，不是路径
           alt: img.name,
           title: img.id,
           // 同时写入 data-id 和 data-filename，确保保存时能正确匹配图片
@@ -309,6 +341,10 @@ const TextEditor: React.FC<TextEditorProps> = ({
           ref={containerRef}
           className="relative mx-auto w-full max-w-[800px] bg-white ring-1 ring-gray-900/5 shadow-xl
             min-h-[900px] md:min-h-[1100px] p-6 md:p-16 cursor-text transition-all rounded-xl flex flex-col"
+          onDragEnter={imageUpload.handleDragEnter}
+          onDragLeave={imageUpload.handleDragLeave}
+          onDragOver={imageUpload.handleDragOver}
+          onDrop={imageUpload.handleDrop}
           onMouseDown={(e) => {
             if (!editor) return;
             const target = e.target as HTMLElement;
@@ -439,30 +475,17 @@ function buildScopedCSS(presetCss: string, customCSS: string, extraCSS: string):
     }
 
     .editor-paper .image-missing {
-      display: block;
-      width: 100%;
-      max-width: 400px;
-      min-height: 80px;
-      background: #FEF2F2 !important;
-      border: 2px dashed #EF4444 !important;
-      border-radius: 12px !important;
-      position: relative;
-      margin: 1.5rem auto;
+      display: inline-block;
+      max-width: 100%;
+      height: auto;
+      border-radius: 8px;
       cursor: pointer;
       transition: all 0.2s;
+      /* SVG占位符会显示文字，不需要::before伪元素 */
     }
     .editor-paper .image-missing:hover {
-      background: #FEE2E2 !important;
+      opacity: 0.8;
       transform: scale(1.02);
-    }
-    .editor-paper .image-missing::before {
-      content: '图片已删除: ' attr(data-missing-name);
-      display: block;
-      padding: 1.75rem 1rem;
-      color: #dc2626;
-      text-align: center;
-      font-size: 0.95rem;
-      font-weight: 600;
     }
   `;
 }

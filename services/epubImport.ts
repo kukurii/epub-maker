@@ -1,5 +1,6 @@
 import JSZip from 'jszip';
 import { ProjectData, Metadata, ImageAsset, ExtraFile, TocItem, Chapter } from '../types';
+import { sanitizeFilename } from '../components/text-editor/editorHelpers';
 
 const normalizePath = (path: string) => {
     const parts = path.split('/');
@@ -74,9 +75,14 @@ export const parseEpub = async (file: File, options?: { imageStartId?: number; c
 
                     const base64 = dataUrl.split(',')[1] || '';
                     const size = Math.floor((base64.length * 3) / 4) - ((base64.match(/=/g) || []).length);
+
+                    // 保留原始文件名并清理不安全字符
+                    const originalName = href.split('/').pop() || 'image';
+                    const safeName = sanitizeFilename(originalName);
+
                     const asset: ImageAsset = {
                         id: assetId,
-                        name: href.split('/').pop() || 'image',
+                        name: safeName,
                         data: dataUrl,
                         type: mediaType,
                         dimensions: 'N/A',
@@ -108,40 +114,65 @@ export const parseEpub = async (file: File, options?: { imageStartId?: number; c
     await Promise.all(manifestPromises);
 
     const spineItems = opfDoc.getElementsByTagName('itemref');
+
+    // 需要排除的章节（封面、版权页等）
+    const excludedChapterNames = ['cover', 'titlepage', 'title', 'cover-page', 'copyright', 'toc'];
+
     const chapterPromises = Array.from(spineItems).map(async (spineItem, chapterIndex) => {
         const idref = spineItem.getAttribute('idref');
         if (!idref) return null;
 
         const chapterItem = itemMap.get(idref);
         if (chapterItem && chapterItem.mediaType === 'application/xhtml+xml') {
+            // 检查是否是封面章节
+            const fileName = chapterItem.href.toLowerCase().replace(/\.x?html?$/, '').split('/').pop() || '';
+            const shouldExclude = excludedChapterNames.some(name => fileName.includes(name));
+
+            if (shouldExclude) {
+                console.log('⏭️ 跳过封面/版权章节:', chapterItem.href);
+                return null; // 跳过封面章节
+            }
+
             const chapterFile = zip.file(chapterItem.zipPath);
             if (chapterFile) {
                 const chapterHtml = await chapterFile.async('text');
                 const chapterDoc = parser.parseFromString(chapterHtml, 'text/html');
 
+                // 先处理图片引用（在任何 DOM 操作之前）
                 const imagesInChapter = chapterDoc.querySelectorAll('img, image');
+                console.log(`📷 章节 "${chapterItem.href}" 找到 ${imagesInChapter.length} 张图片`);
+
                 imagesInChapter.forEach(img => {
                     const srcAttr = img.tagName.toLowerCase() === 'img' ? 'src' : 'href';
                     const src = img.getAttribute(srcAttr) || img.getAttributeNS('http://www.w3.org/1999/xlink', 'href');
                     if (src) {
                         const decodedSrc = decodeURIComponent(src);
                         const chapterDir = chapterItem.zipPath.substring(0, chapterItem.zipPath.lastIndexOf('/'));
-                        const imageZipPath = normalizePath(`${chapterDir}/${decodedSrc}`);
+
+                        // 处理绝对路径和相对路径
+                        let imageZipPath: string;
+                        if (decodedSrc.startsWith('/') || decodedSrc.startsWith('../')) {
+                            // 绝对路径或父级相对路径
+                            imageZipPath = normalizePath(`${opfDir}/${decodedSrc}`);
+                        } else {
+                            // 相对路径
+                            imageZipPath = normalizePath(`${chapterDir}/${decodedSrc}`);
+                        }
+
+                        console.log('🔍 查找图片:', decodedSrc, '→', imageZipPath);
 
                         if (imagePathMap.has(imageZipPath)) {
                             const asset = imagePathMap.get(imageZipPath)!;
 
-                            const getExtension = (type: string): string => {
-                                if (type.includes('png')) return 'png';
-                                if (type.includes('gif')) return 'gif';
-                                if (type.includes('webp')) return 'webp';
-                                return 'jpg';
-                            }
-                            const relativePath = `images/img_${asset.id}.${getExtension(asset.type)}`;
+                            // 使用原始文件名，不再重命名
+                            const relativePath = `images/${asset.name}`;
 
                             img.setAttribute(srcAttr, relativePath);
                             img.setAttribute('data-id', asset.id);
                             img.setAttribute('data-filename', asset.name);
+                            console.log('✅ 图片匹配成功:', asset.name, '→', relativePath);
+                        } else {
+                            console.warn('❌ 图片未找到:', imageZipPath);
                         }
                     }
                 });
@@ -150,20 +181,8 @@ export const parseEpub = async (file: File, options?: { imageStartId?: number; c
                     imagesInChapter.forEach(img => img.remove());
                 }
 
+                // 然后处理 cleanHtml（保护图片标签）
                 if (options?.cleanHtml) {
-                    // Smart paragraph conversion
-                    let htmlStr = chapterDoc.body.innerHTML;
-
-                    // Convert divs to p
-                    htmlStr = htmlStr.replace(/<div/gi, '<p').replace(/<\/div>/gi, '</p>');
-
-                    // Replace <br> with </p><p>
-                    htmlStr = htmlStr.replace(/<br\s*\/?>/gi, '</p><p>');
-
-                    // Wrap everything in a <p> to ensure stray text nodes are wrapped.
-                    // The browser's HTML5 parser will auto-correct nested and invalid <p> tags!
-                    chapterDoc.body.innerHTML = `<p>${htmlStr}</p>`;
-
                     // Remove scripts and styles completely
                     chapterDoc.querySelectorAll('script, style, link, meta').forEach(el => el.remove());
 
@@ -185,7 +204,16 @@ export const parseEpub = async (file: File, options?: { imageStartId?: number; c
                         el.removeAttribute('align');
                     });
 
-                    // Clean up empty paragraphs created by the auto-correction
+                    // Convert divs to p (保留 DOM 结构，不用字符串替换)
+                    chapterDoc.querySelectorAll('div').forEach(div => {
+                        const p = chapterDoc.createElement('p');
+                        while (div.firstChild) {
+                            p.appendChild(div.firstChild);
+                        }
+                        div.parentNode?.replaceChild(p, div);
+                    });
+
+                    // Clean up empty paragraphs
                     chapterDoc.querySelectorAll('p').forEach(p => {
                         // Keep if it has an image, otherwise if text is empty, remove it
                         if (!p.textContent?.trim() && !p.querySelector('img')) {
@@ -234,9 +262,12 @@ export const parseEpub = async (file: File, options?: { imageStartId?: number; c
 
     const resolvedChapters = (await Promise.all(chapterPromises)).filter(Boolean) as Chapter[];
 
+    // ─── 封面处理（增强版）───
     const coverMetaId = opfDoc.querySelector('meta[name="cover"]')?.getAttribute('content');
     let coverDataUrl: string | null = null;
     let coverAssetId: string | null = null;
+
+    // 方式1: 通过 OPF meta 标签查找封面
     if (coverMetaId) {
         const coverItem = itemMap.get(coverMetaId);
         if (coverItem) {
@@ -244,8 +275,50 @@ export const parseEpub = async (file: File, options?: { imageStartId?: number; c
             if (coverAsset) {
                 coverDataUrl = coverAsset.data;
                 coverAssetId = coverAsset.id;
+                console.log('✅ 封面从 meta 标签找到:', coverAsset.name);
             }
         }
+    }
+
+    // 方式2: 如果没找到，从 cover.xhtml 或 titlepage.xhtml 中提取
+    if (!coverDataUrl) {
+        const coverChapterNames = ['cover', 'titlepage', 'title', 'cover-page'];
+        for (const [id, item] of itemMap.entries()) {
+            const fileName = item.href.toLowerCase().replace(/\.x?html?$/, '');
+            if (coverChapterNames.includes(fileName)) {
+                const coverChapterFile = zip.file(item.zipPath);
+                if (coverChapterFile) {
+                    const coverHtml = await coverChapterFile.async('text');
+                    const coverDoc = parser.parseFromString(coverHtml, 'text/html');
+
+                    // 查找 cover.xhtml 中的第一张图片
+                    const firstImg = coverDoc.querySelector('img');
+                    if (firstImg) {
+                        const src = firstImg.getAttribute('src');
+                        if (src) {
+                            const chapterDir = item.zipPath.substring(0, item.zipPath.lastIndexOf('/'));
+                            const imageZipPath = normalizePath(`${chapterDir}/${decodeURIComponent(src)}`);
+                            const coverAsset = imagePathMap.get(imageZipPath);
+
+                            if (coverAsset) {
+                                coverDataUrl = coverAsset.data;
+                                coverAssetId = coverAsset.id;
+                                console.log('✅ 封面从章节中提取:', coverAsset.name);
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // 方式3: 如果还是没找到，尝试使用第一张图片作为封面
+    if (!coverDataUrl && newImages.length > 0) {
+        const firstImage = newImages[0];
+        coverDataUrl = firstImage.data;
+        coverAssetId = firstImage.id;
+        console.log('⚠️ 使用第一张图片作为封面:', firstImage.name);
     }
 
     return {

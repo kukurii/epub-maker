@@ -10,6 +10,7 @@ import {
   Square,
 } from 'lucide-react';
 import SubItemTree from './SubItemTree';
+import { DragHandle } from '../../hooks/useDragSort';
 
 interface ChapterItemProps {
   /** 章节数据（附带 originalIndex） */
@@ -38,6 +39,14 @@ interface ChapterItemProps {
   batchSelected?: boolean;
   /** 切换批量选择 */
   onToggleBatchSelect?: (chapterId: string) => void;
+  /** 拖拽事件 */
+  onDragStart?: (e: React.DragEvent) => void;
+  onDragEnd?: (e: React.DragEvent) => void;
+  onDragOver?: (e: React.DragEvent) => void;
+  onDragLeave?: () => void;
+  onDrop?: (e: React.DragEvent) => void;
+  isDragging?: boolean;
+  isDropTarget?: boolean;
 }
 
 /**
@@ -58,6 +67,13 @@ const ChapterItem: React.FC<ChapterItemProps> = ({
   selectionMode = false,
   batchSelected = false,
   onToggleBatchSelect,
+  onDragStart,
+  onDragEnd,
+  onDragOver,
+  onDragLeave,
+  onDrop,
+  isDragging = false,
+  isDropTarget = false,
 }) => {
   const isActive = currentChapterId === chapter.id;
   const isIncludedInToc = !chapter.excludeFromToc;
@@ -67,6 +83,12 @@ const ChapterItem: React.FC<ChapterItemProps> = ({
     <div className="mb-1.5">
       {/* 章节主行 */}
       <div
+        draggable={!selectionMode}
+        onDragStart={onDragStart}
+        onDragEnd={onDragEnd}
+        onDragOver={onDragOver}
+        onDragLeave={onDragLeave}
+        onDrop={onDrop}
         className={`
           group flex items-center p-2.5 rounded-xl cursor-default
           transition-all duration-200
@@ -74,8 +96,14 @@ const ChapterItem: React.FC<ChapterItemProps> = ({
             ? 'bg-blue-500 text-white shadow-md shadow-blue-200'
             : 'hover:bg-gray-100/80 text-gray-800'
           }
+          ${isDragging ? 'opacity-50' : ''}
+          ${isDropTarget ? 'border-2 border-blue-400 border-dashed' : ''}
         `}
       >
+        {/* 拖拽手柄 */}
+        {!selectionMode && (
+          <DragHandle className="mr-2 flex-shrink-0" />
+        )}
         {/* 批量选择复选框 */}
         {selectionMode && (
           <button

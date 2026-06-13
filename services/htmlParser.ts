@@ -1,6 +1,14 @@
 import { Chapter } from '../types';
 
 /**
+ * 生成唯一的章节 ID
+ * 使用时间戳 + 随机数确保不会冲突
+ */
+const generateUniqueId = (): string => {
+    return `${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+};
+
+/**
  * 解析HTML文件为章节
  * 支持多种HTML结构：
  * 1. 按 <h1> 标签切分章节
@@ -46,7 +54,7 @@ export const parseHtmlToChapters = (htmlContent: string): Chapter[] => {
 
             const content = `<h1>${title}</h1>\n${contentParts.join('\n')}`;
             chapters.push({
-                id: Date.now().toString() + index,
+                id: generateUniqueId(),
                 title,
                 content,
                 level: 1,
@@ -74,7 +82,7 @@ export const parseHtmlToChapters = (htmlContent: string): Chapter[] => {
             }
 
             chapters.push({
-                id: Date.now().toString() + index,
+                id: generateUniqueId(),
                 title,
                 content,
                 level: 1,
@@ -97,7 +105,7 @@ export const parseHtmlToChapters = (htmlContent: string): Chapter[] => {
             : `<h1>${title}</h1>\n${bodyContent}`;
 
         chapters.push({
-            id: Date.now().toString(),
+            id: generateUniqueId(),
             title,
             content,
             level: 1,
@@ -108,7 +116,7 @@ export const parseHtmlToChapters = (htmlContent: string): Chapter[] => {
     // 如果完全没有内容，返回一个空章节
     if (chapters.length === 0) {
         chapters.push({
-            id: Date.now().toString(),
+            id: generateUniqueId(),
             title: '空章节',
             content: '<h1>空章节</h1>\n<p>未能从HTML文件中提取到内容。</p>',
             level: 1,

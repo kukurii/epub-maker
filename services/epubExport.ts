@@ -8,19 +8,23 @@ import { PRESET_STYLES } from '../themes';
 const fixXHTML = (html: string): string => {
     let fixed = html;
 
-    // 1. Properly encode ampersands that are not already part of an HTML entity
-    fixed = fixed.replace(/&(?![a-zA-Z#0-9]+;)/g, "&amp;");
+    // 1. 先转义特殊的 XML 字符（但不影响已有的 HTML 实体）
+    // 替换 & 但排除已有的实体引用
+    fixed = fixed.replace(/&(?!(lt|gt|amp|quot|apos|#\d+|#x[0-9a-fA-F]+);)/g, "&amp;");
 
-    // 2. Close void tags that browsers might leave open (e.g., <br> to <br />)
-    const voidTags = ['br', 'hr', 'img', 'input', 'link', 'meta'];
+    // 2. 修复未闭合的自闭合标签
+    const voidTags = ['br', 'hr', 'img', 'input', 'link', 'meta', 'area', 'base', 'col', 'embed', 'param', 'source', 'track', 'wbr'];
     voidTags.forEach(tag => {
-        // Regex to find <tag ... > (without / at end)
-        const regex = new RegExp(`<${tag}\\b([^>]*)(?<!/)>`, 'gi');
+        // 匹配 <tag ...> 但不是 <tag ... /> 的情况
+        const regex = new RegExp(`<${tag}\\b([^>]*?)(?<!/)>`, 'gi');
         fixed = fixed.replace(regex, `<${tag}$1 />`);
     });
 
-    // Ensure <fy></fy> tags are properly formed if the editor output them as <fy/>
+    // 3. 确保自定义标签正确闭合（如分页标记 <fy>）
     fixed = fixed.replace(/<fy\s*\/>/gi, "<fy></fy>");
+
+    // 4. 移除可能导致问题的零宽字符和控制字符
+    fixed = fixed.replace(/[​-‍﻿]/g, '');
 
     return fixed;
 };
@@ -66,18 +70,14 @@ export const generateEpub = async (project: ProjectData) => {
 
     project.images.forEach((img) => {
         const imgData = img.data.split(',')[1];
-        // Get extension
-        let ext = 'jpg';
-        if (img.type.includes('png')) ext = 'png';
-        else if (img.type.includes('gif')) ext = 'gif';
-        else if (img.type.includes('webp')) ext = 'webp';
 
-        const uniqueFilename = `img_${img.id}.${ext}`;
+        // 使用原始文件名，不再重命名
+        const originalFilename = img.name;
 
-        imageMapByName.set(img.name, uniqueFilename);
-        imageMapById.set(img.id, uniqueFilename);
+        imageMapByName.set(img.name, originalFilename);
+        imageMapById.set(img.id, originalFilename);
 
-        oebps.file(`images/${uniqueFilename}`, imgData, { base64: true });
+        oebps.file(`images/${originalFilename}`, imgData, { base64: true });
     });
 
     // --- Cover Logic ---
@@ -88,9 +88,9 @@ export const generateEpub = async (project: ProjectData) => {
     if (project.coverId) {
         const referencedImg = project.images.find(i => i.id === project.coverId);
         if (referencedImg) {
-            const uniqueName = imageMapById.get(referencedImg.id);
-            if (uniqueName) {
-                coverFilename = `images/${uniqueName}`;
+            const originalName = imageMapById.get(referencedImg.id);
+            if (originalName) {
+                coverFilename = `images/${originalName}`;
                 isCoverFromImages = true;
             }
         }
@@ -140,19 +140,45 @@ export const generateEpub = async (project: ProjectData) => {
         images.forEach(img => {
             const id = img.getAttribute('data-id') || img.getAttribute('title');
             const filename = img.getAttribute('data-filename') || img.getAttribute('alt');
+            const currentSrc = img.getAttribute('src') || '';
 
             let uniqueName = null;
 
+            // 优先使用 data-id 匹配
             if (id && imageMapById.has(id)) {
                 uniqueName = imageMapById.get(id);
-            } else if (filename && imageMapByName.has(filename)) {
+            }
+            // 其次尝试 filename 匹配
+            else if (filename && imageMapByName.has(filename)) {
                 uniqueName = imageMapByName.get(filename);
+            }
+            // 最后尝试从 src 中提取文件名匹配
+            else if (currentSrc) {
+                const srcFilename = currentSrc.split('/').pop();
+                if (srcFilename && imageMapByName.has(srcFilename)) {
+                    uniqueName = imageMapByName.get(srcFilename);
+                }
             }
 
             if (uniqueName) {
                 img.setAttribute('src', `images/${uniqueName}`);
+                // 保留元数据，方便后续导入
                 if (id) img.setAttribute('data-id', id);
                 if (filename) img.setAttribute('data-filename', filename);
+                // 添加 alt 属性提升 EPUB 可访问性
+                if (!img.getAttribute('alt')) {
+                    img.setAttribute('alt', filename || 'Image');
+                }
+            } else {
+                // 图片未找到，使用占位符SVG（与编辑器保持一致）
+                console.warn(`⚠️ 图片引用未找到: id=${id}, filename=${filename}, src=${currentSrc}`);
+
+                const missingName = filename || id || '未知';
+                // 使用base64编码的SVG占位符，EPUB阅读器兼容性更好
+                const placeholderSvg = `data:image/svg+xml;base64,${btoa(`<svg xmlns="http://www.w3.org/2000/svg" width="300" height="150"><rect width="300" height="150" fill="#fee" stroke="#f00" stroke-width="2" stroke-dasharray="5,5"/><text x="150" y="75" text-anchor="middle" fill="#c00" font-size="14" font-family="sans-serif">图片缺失: ${missingName}</text></svg>`)}`;
+
+                img.setAttribute('src', placeholderSvg);
+                img.setAttribute('alt', `[图片缺失: ${missingName}]`);
             }
         });
 
@@ -245,9 +271,9 @@ export const generateEpub = async (project: ProjectData) => {
     }
 
     project.images.forEach((img) => {
-        const uniqueName = imageMapById.get(img.id);
-        if (uniqueName) {
-            manifestItems += `<item id="img_${img.id}" href="images/${uniqueName}" media-type="${img.type}"/>\n`;
+        const originalName = imageMapById.get(img.id);
+        if (originalName) {
+            manifestItems += `<item id="img_${img.id}" href="images/${originalName}" media-type="${img.type}"/>\n`;
         }
     });
 
