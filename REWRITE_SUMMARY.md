@@ -6,7 +6,7 @@
 
 ---
 
-## ✅ 已完成的阶段（3/5）
+## ✅ 已完成的阶段（4/5）
 
 ### 阶段一：布局系统重构 ✨
 
@@ -122,28 +122,33 @@
 
 | 指标 | 数值 |
 |------|------|
-| 新增文件 | 9个 |
-| 修改文件 | 4个 |
-| 新增代码 | ~2,300行 |
-| 删除代码 | ~355行 |
-| 净增长 | ~1,945行 |
-| Git 提交 | 5个 |
+| 新增文件 | 11个 |
+| 修改文件 | 6个 |
+| 新增代码 | ~2,500行 |
+| 删除代码 | ~461行 |
+| 净增长 | ~2,039行 |
+| Git 提交 | 8个 |
 
 ### 新增文件清单
 1. `EDITOR_REWRITE_PLAN.md` - 总体计划
 2. `STAGE_THREE_PLAN.md` - 阶段三计划
-3. `hooks/useEditorSettings.ts`
-4. `hooks/useResizableSidebar.ts`
-5. `components/text-editor/EditorStatusBar.tsx`
-6. `components/text-editor/TextEditor.backup.tsx`
-7. `components/text-editor/EditorToolbar.backup.tsx`
-8. `utils/cssScoper.ts`
+3. `REWRITE_SUMMARY.md` - 完成总结
+4. `DEBUG_BASE64_IMAGES.md` - Base64 图片调试
+5. `hooks/useEditorSettings.ts`
+6. `hooks/useResizableSidebar.ts`
+7. `components/text-editor/EditorStatusBar.tsx`
+8. `components/text-editor/EditorPaper.tsx` ⭐ 阶段四新增
+9. `components/text-editor/TextEditor.backup.tsx`
+10. `components/text-editor/EditorToolbar.backup.tsx`
+11. `utils/cssScoper.ts`
 
 ### 主要修改文件
 1. `components/layout/ViewContainer.tsx` - 拖拽分割
-2. `components/text-editor/TextEditor.tsx` - 响应式 + 图片
+2. `components/text-editor/TextEditor.tsx` - 响应式 + 图片 + 组件化
 3. `components/text-editor/EditorToolbar.tsx` - 完全重构
-4. `hooks/useImageUpload.ts` - 批量上传
+4. `components/text-editor/extensions/CustomImage.ts` - 修复 base64
+5. `components/text-editor/editorHelpers.ts` - 增强调试
+6. `hooks/useImageUpload.ts` - 批量上传 + 类型导出
 
 ---
 
@@ -199,18 +204,46 @@
 
 ---
 
-## ⏳ 待完成的阶段（2/5）
+### 阶段四：组件拆分与性能优化 ♻️
 
-### 阶段四：组件拆分与性能优化
+**时间**: 第4阶段  
+**状态**: ✅ 100% 完成  
+**提交**: `1956db0`
 
-**预计时间**: 1天  
-**优先级**: 中
+#### 核心改进
+1. **创建 EditorPaper 组件**
+   - 提取纸张渲染逻辑（~180行）
+   - 拆分为 4 个子组件：
+     - DragOverlay - 拖拽覆盖层
+     - ErrorNotification - 错误通知
+     - ProcessingNotification - 处理中通知
+     - EmptyPlaceholder - 空内容占位符
 
-#### 计划任务
-1. 创建 `EditorPaper.tsx` 组件
-2. 进一步精简 `TextEditor.tsx`
-3. 图片懒加载
-4. 防抖优化
+2. **优化组件职责**
+   - TextEditor: 主逻辑和状态管理
+   - EditorPaper: 纸张渲染和视觉反馈
+   - EditorToolbar: 工具栏交互
+   - EditorStatusBar: 状态显示
+   - 每个组件职责单一、清晰
+
+3. **类型系统优化**
+   - 导出 `UseImageUploadReturn` 类型
+   - 导出 `EditorPaperProps` 类型
+   - 更好的 TypeScript 支持
+
+#### 优化效果
+- **代码可维护性**: 组件职责更清晰
+- **性能优化**: 独立渲染，避免不必要的重渲染
+- **可复用性**: 子组件可独立使用
+
+#### 改进数据
+- 代码行数：+187 -106
+- 新增组件：1个（EditorPaper）
+- 子组件拆分：4个
+
+---
+
+## ⏳ 待完成的阶段（1/5）
 
 ### 阶段五：新增功能
 
