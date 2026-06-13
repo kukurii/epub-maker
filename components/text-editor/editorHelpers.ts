@@ -73,6 +73,33 @@ export const contentToEditorHTML = (html: string, images: ImageAsset[]): string 
   console.log('🖼️ contentToEditorHTML: 图片库有', images.length, '张图片');
   console.log('📋 ID 列表:', Array.from(imageMapById.keys()));
   console.log('📋 文件名列表:', Array.from(imageMapByName.keys()));
+  console.log('📄 HTML 内容预览:', html.substring(0, 300));
+
+  // 🔧 先将 SVG <image> 标签转换为 <img> 标签
+  doc.querySelectorAll('image').forEach((svgImageEl) => {
+    const href = svgImageEl.getAttribute('href') ||
+                 svgImageEl.getAttribute('xlink:href') ||
+                 svgImageEl.getAttributeNS('http://www.w3.org/1999/xlink', 'href') || '';
+
+    const dataId = svgImageEl.getAttribute('data-id') || '';
+    const dataFilename = svgImageEl.getAttribute('data-filename') || '';
+
+    // 创建新的 img 标签
+    const imgEl = doc.createElement('img');
+    imgEl.setAttribute('src', href);
+    if (dataId) imgEl.setAttribute('data-id', dataId);
+    if (dataFilename) imgEl.setAttribute('data-filename', dataFilename);
+
+    // 复制宽高属性（如果有）
+    const width = svgImageEl.getAttribute('width');
+    const height = svgImageEl.getAttribute('height');
+    if (width) imgEl.setAttribute('width', width);
+    if (height) imgEl.setAttribute('height', height);
+
+    // 替换节点
+    svgImageEl.parentNode?.replaceChild(imgEl, svgImageEl);
+    console.log('🔄 转换 SVG <image> 为 <img>:', href);
+  });
 
   doc.querySelectorAll('img').forEach((imgEl, index) => {
     const { id, filename } = getImageReference(imgEl);
@@ -100,52 +127,52 @@ export const contentToEditorHTML = (html: string, images: ImageAsset[]): string 
       const srcFilename = src.split('/').pop() || '';
       console.log('  🔎 尝试从 src 提取文件名:', srcFilename);
 
-      if (srcFilename) {
-        // 策略1: 尝试匹配 img_001.jpg 格式
-        const imgIdMatch = srcFilename.match(/img_(\d+)\.(jpg|png|gif|webp|svg)/);
-        if (imgIdMatch) {
-          const imgId = imgIdMatch[1].padStart(3, '0'); // 确保ID格式统一
-          console.log('  🔎 提取到 ID:', imgId);
-          if (imageMapById.has(imgId)) {
-            foundImage = imageMapById.get(imgId)!;
-            console.log('  ✅ 通过 src ID 匹配成功:', foundImage.name);
-          }
-        }
-
-        // 策略2: 直接按完整文件名匹配（支持普通文件名如 photo.jpg）
-        if (!foundImage && imageMapByName.has(srcFilename)) {
-          foundImage = imageMapByName.get(srcFilename)!;
-          console.log('  ✅ 通过 src 文件名匹配成功:', foundImage.name);
-        }
-
-        // 策略3: 尝试提取纯数字ID（如 001.jpg）
-        if (!foundImage) {
-          const pureIdMatch = srcFilename.match(/^(\d+)\.(jpg|png|gif|webp|svg)/);
-          if (pureIdMatch) {
-            const pureId = pureIdMatch[1].padStart(3, '0');
-            if (imageMapById.has(pureId)) {
-              foundImage = imageMapById.get(pureId)!;
-              console.log('  ✅ 通过纯数字 ID 匹配成功:', foundImage.name);
-            }
-          }
-        }
+      // 直接按完整文件名匹配（支持普通文件名如 photo.jpg）
+      if (srcFilename && imageMapByName.has(srcFilename)) {
+        foundImage = imageMapByName.get(srcFilename)!;
+        console.log('  ✅ 通过 src 文件名匹配成功:', foundImage.name);
       }
     }
 
     if (foundImage) {
-      imgEl.setAttribute('src', foundImage.data);
+      // 🔧 确保 base64 数据格式正确
+      const base64Data = foundImage.data;
+
+      // 验证 base64 格式
+      if (!base64Data.startsWith('data:image')) {
+        console.error('⚠️ 图片数据格式错误，缺少 data:image 前缀:', {
+          id: foundImage.id,
+          name: foundImage.name,
+          dataPrefix: base64Data.substring(0, 30)
+        });
+      }
+
+      imgEl.setAttribute('src', base64Data);
       imgEl.setAttribute('data-id', foundImage.id);
       imgEl.setAttribute('data-filename', foundImage.name);
       imgEl.setAttribute('title', foundImage.id);
       imgEl.setAttribute('alt', foundImage.name);
       imgEl.classList.remove('image-missing');
       imgEl.removeAttribute('data-missing-name');
-      console.log('  ✅ 设置 base64 数据成功');
+
+      console.log('  ✅ 设置 base64 数据成功:', {
+        id: foundImage.id,
+        name: foundImage.name,
+        srcLength: base64Data.length,
+        srcPrefix: base64Data.substring(0, 30)
+      });
       return;
     }
 
     // 图片不存在，标记为缺失，使用SVG占位符
-    console.warn('  ❌ 图片未找到! id:', id, 'filename:', filename, 'src:', src);
+    console.error('❌ 图片未找到详情:', {
+      'data-id': id,
+      'data-filename': filename,
+      'src': src,
+      '图片库有': images.length,
+      '图片库ID列表': Array.from(imageMapById.keys()),
+      '图片库文件名列表': Array.from(imageMapByName.keys())
+    });
     const missingName = filename || id || '未知文件';
 
     // 使用SVG占位符代替CSS伪元素，提高兼容性
