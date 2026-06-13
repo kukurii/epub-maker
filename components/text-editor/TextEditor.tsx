@@ -346,13 +346,13 @@ const TextEditor: React.FC<TextEditorProps> = ({
 
   // ─── 获取响应式编辑器纸张类名 ───
   const paperClassName = useMemo(() => {
-    // 根据字体大小动态调整纸张最大宽度
+    // 根据字体大小动态调整纸张最大宽度（减小最大宽度，让编辑器左移）
     const fontSizeValue = editorSettings.getFontSizeValue();
     const maxWidthClass =
-      fontSizeValue <= 14 ? 'max-w-[680px] md:max-w-[760px] lg:max-w-[800px]' :
-      fontSizeValue <= 16 ? 'max-w-[720px] md:max-w-[800px] lg:max-w-[840px]' :
-      fontSizeValue <= 18 ? 'max-w-[760px] md:max-w-[840px] lg:max-w-[880px]' :
-      'max-w-[800px] md:max-w-[880px] lg:max-w-[920px]';
+      fontSizeValue <= 14 ? 'max-w-[600px] md:max-w-[680px] lg:max-w-[720px]' :
+      fontSizeValue <= 16 ? 'max-w-[640px] md:max-w-[720px] lg:max-w-[760px]' :
+      fontSizeValue <= 18 ? 'max-w-[680px] md:max-w-[760px] lg:max-w-[800px]' :
+      'max-w-[720px] md:max-w-[800px] lg:max-w-[840px]';
 
     return `relative mx-auto w-full ${maxWidthClass} bg-white ring-1 ring-gray-900/5 shadow-xl
       min-h-screen p-4 md:p-8 lg:p-12 xl:p-16 cursor-text transition-all rounded-xl flex flex-col`;

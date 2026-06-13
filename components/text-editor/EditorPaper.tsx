@@ -153,11 +153,11 @@ const ProcessingNotification: React.FC = () => (
 
 /** 空内容占位符 */
 const EmptyPlaceholder: React.FC = () => (
-  <div className="absolute left-0 right-0 top-1 text-gray-300 pointer-events-none select-none">
-    <p className="text-base md:text-lg leading-relaxed mb-3">
+  <div className="absolute left-0 right-0 top-1 text-gray-300 pointer-events-none select-none opacity-50">
+    <p className="text-base md:text-lg leading-relaxed mb-3 opacity-70">
       ✨ 在这里开始写作
     </p>
-    <div className="text-xs md:text-sm space-y-1 text-gray-400">
+    <div className="text-xs md:text-sm space-y-1 text-gray-400 opacity-60">
       <p>💡 <strong>拖拽图片</strong>到编辑器即可插入</p>
       <p>⌨️ <strong>Ctrl/Cmd + F</strong> 查找文字</p>
       <p>🔤 <strong>Ctrl/Cmd + +/-</strong> 调整字体大小</p>
