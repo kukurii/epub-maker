@@ -8,7 +8,8 @@ import MetadataView from '../views/MetadataView';
 import StylesView from '../views/StylesView';
 import ImagesView from '../views/ImagesView';
 import StructureView from '../views/StructureView';
-import { BookOpen } from 'lucide-react';
+import { BookOpen, GripVertical } from 'lucide-react';
+import { useResizableSidebar } from '../../hooks/useResizableSidebar';
 
 interface ViewContainerProps {
   currentView: ViewMode;
@@ -35,6 +36,102 @@ interface ViewContainerProps {
   onLoadingEnd: () => void;
   onMobileBack: () => void;
 }
+
+/**
+ * ChaptersView - 章节编辑视图（带可调整宽度的侧边栏）
+ */
+const ChaptersView: React.FC<{
+  project: ProjectData;
+  activeChapterId: string | null;
+  activeChapter: Chapter | undefined;
+  editorFocusRequest: ViewContainerProps['editorFocusRequest'];
+  onUpdateProject: ViewContainerProps['onUpdateProject'];
+  onUpdateChapters: ViewContainerProps['onUpdateChapters'];
+  onSelectChapter: ViewContainerProps['onSelectChapter'];
+  onScrollToAnchor: ViewContainerProps['onScrollToAnchor'];
+  onFocusSearchText: ViewContainerProps['onFocusSearchText'];
+  onUpdateChapterContent: ViewContainerProps['onUpdateChapterContent'];
+  onSplitChapter: ViewContainerProps['onSplitChapter'];
+  onMobileBack: ViewContainerProps['onMobileBack'];
+}> = ({
+  project,
+  activeChapterId,
+  activeChapter,
+  editorFocusRequest,
+  onUpdateProject,
+  onUpdateChapters,
+  onSelectChapter,
+  onScrollToAnchor,
+  onFocusSearchText,
+  onUpdateChapterContent,
+  onSplitChapter,
+  onMobileBack,
+}) => {
+  const { width, isDragging, isMobile, handleMouseDown } = useResizableSidebar();
+
+  return (
+    <div className="flex flex-1 h-full overflow-hidden relative">
+      {/* 目录列表区：可调整宽度（桌面端），移动端全屏 */}
+      <div
+        className={`${activeChapterId ? 'hidden md:flex' : 'flex'} h-full flex-col flex-shrink-0`}
+        style={{
+          width: isMobile ? '100%' : `${width}px`,
+        }}
+      >
+        <ChapterManager
+          chapters={project.chapters}
+          images={project.images}
+          currentChapterId={activeChapterId}
+          onSelectChapter={onSelectChapter}
+          onScrollToAnchor={onScrollToAnchor}
+          onFocusSearchText={onFocusSearchText}
+          onUpdateChapters={onUpdateChapters}
+          className="w-full"
+        />
+      </div>
+
+      {/* 拖拽分割条：仅桌面端显示 */}
+      {!isMobile && (
+        <div
+          className={`hidden md:flex items-center justify-center w-1 bg-gray-200/50 hover:bg-blue-400 transition-colors cursor-col-resize group relative ${
+            isDragging ? 'bg-blue-500' : ''
+          }`}
+          onMouseDown={handleMouseDown}
+        >
+          <div className="absolute inset-y-0 -left-1 -right-1" />
+          <GripVertical
+            size={16}
+            className={`text-gray-400 group-hover:text-white transition-colors ${
+              isDragging ? 'text-white' : ''
+            }`}
+          />
+        </div>
+      )}
+
+      {/* 编辑器区域 */}
+      <div className={`${!activeChapterId ? 'hidden md:flex' : 'flex'} flex-1 h-full flex-col min-w-0`}>
+        {activeChapter ? (
+          <TextEditor
+            key={activeChapterId}
+            content={activeChapter.content}
+            onContentChange={onUpdateChapterContent}
+            onSplitChapter={onSplitChapter}
+            project={project}
+            onUpdateProject={onUpdateProject}
+            focusRequest={editorFocusRequest}
+            activeChapter={activeChapter}
+            onMobileBack={onMobileBack}
+          />
+        ) : (
+          <div className="flex-1 flex flex-col items-center justify-center bg-gray-50 text-gray-400">
+            <BookOpen size={48} className="mb-4" />
+            <p>请从左侧选择一个章节开始编辑</p>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
 
 const ViewContainer: React.FC<ViewContainerProps> = ({
   currentView,
@@ -64,44 +161,20 @@ const ViewContainer: React.FC<ViewContainerProps> = ({
         onLoadingEnd={onLoadingEnd}
       />;
     case 'chapters':
-      return (
-        <div className="flex flex-1 h-full overflow-hidden relative">
-        {/* 目录列表区：固定 w-80 宽度，移动端全宽且只在没有选中章节时显示 */}
-          <div className={`${activeChapterId ? 'hidden md:flex' : 'flex'} w-full md:w-80 h-full flex-col flex-shrink-0`}>
-            <ChapterManager
-              chapters={project.chapters}
-              images={project.images}
-              currentChapterId={activeChapterId}
-              onSelectChapter={onSelectChapter}
-              onScrollToAnchor={onScrollToAnchor}
-              onFocusSearchText={onFocusSearchText}
-              onUpdateChapters={onUpdateChapters}
-              className="w-full md:w-80"
-            />
-          </div>
-
-          <div className={`${!activeChapterId ? 'hidden md:flex' : 'flex'} flex-1 h-full flex-col min-w-0`}>
-            {activeChapter ? (
-              <TextEditor
-                key={activeChapterId}
-                content={activeChapter.content}
-                onContentChange={onUpdateChapterContent}
-                onSplitChapter={onSplitChapter}
-                project={project}
-                onUpdateProject={onUpdateProject}
-                focusRequest={editorFocusRequest}
-                activeChapter={activeChapter}
-                onMobileBack={onMobileBack}
-              />
-            ) : (
-              <div className="flex-1 flex flex-col items-center justify-center bg-gray-50 text-gray-400">
-                <BookOpen size={48} className="mb-4" />
-                <p>请从左侧选择一个章节开始编辑</p>
-              </div>
-            )}
-          </div>
-        </div>
-      );
+      return <ChaptersView
+        project={project}
+        activeChapterId={activeChapterId}
+        activeChapter={activeChapter}
+        editorFocusRequest={editorFocusRequest}
+        onUpdateProject={onUpdateProject}
+        onUpdateChapters={onUpdateChapters}
+        onSelectChapter={onSelectChapter}
+        onScrollToAnchor={onScrollToAnchor}
+        onFocusSearchText={onFocusSearchText}
+        onUpdateChapterContent={onUpdateChapterContent}
+        onSplitChapter={onSplitChapter}
+        onMobileBack={onMobileBack}
+      />;
     case 'metadata':
       return <MetadataView metadata={project.metadata} onUpdate={(m) => onUpdateProject({ metadata: m })} />;
     case 'styles':

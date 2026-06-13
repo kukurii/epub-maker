@@ -1,16 +1,14 @@
 /**
- * TextEditor - 文本编辑器主组件（重构版）
+ * TextEditor - 文本编辑器主组件
  *
- * 改进：
- * 1. 使用 useEditorContent hook 管理内容同步
- * 2. 使用 useEditorSearch hook 管理查找替换
- * 3. 使用 useEditorSettings hook 管理编辑器设置（字体大小等）
- * 4. CSS 作用域逻辑提取到独立工具函数
- * 5. 状态栏独立为组件，代码更清晰
- * 6. 响应式布局优化，适配不同屏幕尺寸
+ * 核心改进：
+ * 1. 使用 useEditorContent hook 管理内容同步，解决闭包过期问题
+ * 2. 使用改进的 useEditorSearch hook，替换后自动重新计算匹配
+ * 3. CSS 作用域逻辑提取为独立函数，更易维护
  */
 
 import React, { useEffect, useState, useCallback, useMemo, useRef } from 'react';
+import { AlignJustify, Clock } from 'lucide-react';
 import { useEditor, EditorContent } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
 import { CustomImage } from './extensions/CustomImage';
@@ -26,7 +24,6 @@ import { MarkdownShortcuts } from './extensions/MarkdownShortcuts';
 
 import { ProjectData, TocItem, ImageAsset } from '../../types';
 import EditorToolbar from './EditorToolbar';
-import EditorStatusBar from './EditorStatusBar';
 import FindReplaceBar from './FindReplaceBar';
 import ImagePicker from './ImagePicker';
 import { dialog } from '../../services/dialog';
@@ -34,8 +31,6 @@ import { contentToEditorHTML, editorHTMLToContent } from './editorHelpers';
 import { useEditorContent } from './useEditorContent';
 import { useEditorSearch } from './useEditorSearch';
 import { useImageUpload } from '../../hooks/useImageUpload';
-import { useEditorSettings } from '../../hooks/useEditorSettings';
-import { buildScopedCSS } from '../../utils/cssScoper';
 import { PRESET_STYLES } from '../../themes';
 
 interface TextEditorProps {
@@ -68,9 +63,6 @@ const TextEditor: React.FC<TextEditorProps> = ({
   const scrollRef = useRef<HTMLDivElement>(null);
   const [showImagePicker, setShowImagePicker] = useState(false);
   const [stats, setStats] = useState({ chars: 0, time: 0 });
-
-  // ─── 编辑器设置（字体大小等）───
-  const editorSettings = useEditorSettings();
 
   // ─── 图片上传 Hook ───
   const imageUpload = useImageUpload({
@@ -309,7 +301,7 @@ const TextEditor: React.FC<TextEditorProps> = ({
     return () => el.removeEventListener('click', handleClick);
   }, [editor]);
 
-  // ─── CSS 作用域（使用独立工具函数）───
+  // ─── CSS 作用域 ───
   const extraCSS = project.extraFiles
     ?.filter((f) => f.type === 'css' && f.isActive !== false)
     .map((f) => f.content)
@@ -323,26 +315,6 @@ const TextEditor: React.FC<TextEditorProps> = ({
   }, [project.activeStyleId, project.customCSS, project.isPresetStyleActive, extraCSS]);
 
   const chapterTitle = useMemo(() => activeChapter?.title || 'Untitled', [activeChapter]);
-
-  // ─── 获取响应式编辑器纸张类名 ───
-  const paperClassName = useMemo(() => {
-    // 根据字体大小动态调整纸张最大宽度
-    const fontSizeValue = editorSettings.getFontSizeValue();
-    const maxWidthClass =
-      fontSizeValue <= 14 ? 'max-w-[680px] md:max-w-[760px] lg:max-w-[800px]' :
-      fontSizeValue <= 16 ? 'max-w-[720px] md:max-w-[800px] lg:max-w-[840px]' :
-      fontSizeValue <= 18 ? 'max-w-[760px] md:max-w-[840px] lg:max-w-[880px]' :
-      'max-w-[800px] md:max-w-[880px] lg:max-w-[920px]';
-
-    return `relative mx-auto w-full ${maxWidthClass} bg-white ring-1 ring-gray-900/5 shadow-xl
-      min-h-screen p-4 md:p-8 lg:p-12 xl:p-16 cursor-text transition-all rounded-xl flex flex-col`;
-  }, [editorSettings]);
-
-  // ─── 编辑器内容样式（根据字体设置）───
-  const editorStyle = useMemo(() => ({
-    fontSize: `${editorSettings.getFontSizeValue()}px`,
-    lineHeight: editorSettings.lineHeight,
-  }), [editorSettings]);
 
   // ─── 渲染 ───
   return (
@@ -379,11 +351,11 @@ const TextEditor: React.FC<TextEditorProps> = ({
       )}
 
       {/* 编辑器正文区 */}
-      <div ref={scrollRef} className="flex-1 overflow-y-auto bg-slate-50 p-2 md:p-4 lg:p-8 scroll-smooth">
+      <div ref={scrollRef} className="flex-1 overflow-y-auto bg-slate-50 p-2 md:p-8 scroll-smooth pb-20">
         <div
           ref={containerRef}
-          className={paperClassName}
-          style={editorStyle}
+          className="relative mx-auto w-full max-w-[800px] bg-white ring-1 ring-gray-900/5 shadow-xl
+            min-h-[900px] md:min-h-[1100px] p-6 md:p-16 cursor-text transition-all rounded-xl flex flex-col"
           onDragEnter={imageUpload.handleDragEnter}
           onDragLeave={imageUpload.handleDragLeave}
           onDragOver={imageUpload.handleDragOver}
@@ -405,8 +377,8 @@ const TextEditor: React.FC<TextEditorProps> = ({
             editor.commands.focus('end');
           }}
         >
-          {/* 章节标题水印（桌面端显示）*/}
-          <div className="hidden md:block absolute top-4 right-4 lg:top-12 lg:right-12 text-gray-400 font-serif text-sm lg:text-lg opacity-30 select-none pointer-events-none transition-all">
+          {/* 章节标题水印 */}
+          <div className="absolute top-4 right-4 md:top-12 md:right-12 text-gray-400 font-serif text-sm md:text-lg opacity-30 select-none pointer-events-none transition-all">
             《{chapterTitle}》
           </div>
 
@@ -431,21 +403,24 @@ const TextEditor: React.FC<TextEditorProps> = ({
                 </span>
               </div>
             )}
-            <EditorContent editor={editor} className="flex-1 min-h-[400px] md:min-h-[600px] lg:min-h-[800px]" />
+            <EditorContent editor={editor} className="flex-1 min-h-[600px] md:min-h-[900px]" />
           </div>
         </div>
       </div>
 
-      {/* 底部状态栏（使用独立组件）*/}
-      <EditorStatusBar
-        charCount={stats.chars}
-        readingTime={stats.time}
-        fontSize={editorSettings.fontSize}
-        onIncreaseFontSize={editorSettings.increaseFontSize}
-        onDecreaseFontSize={editorSettings.decreaseFontSize}
-        canIncrease={editorSettings.fontSize !== 'large'}
-        canDecrease={editorSettings.fontSize !== 'small'}
-      />
+      {/* 底部状态栏 */}
+      <div className="flex-none h-10 bg-white border-t border-gray-100 flex items-center justify-center md:justify-between px-4 md:px-6 text-xs text-gray-500 select-none z-20">
+        <div className="flex items-center space-x-3 md:space-x-6">
+          <span className="flex items-center font-medium text-gray-400">
+            <AlignJustify size={14} className="mr-2 text-gray-300 transform rotate-90" />
+            {stats.chars} 字
+          </span>
+          <span className="hidden md:flex items-center font-medium text-gray-400">
+            <Clock size={14} className="mr-2 text-gray-300" />
+            约 {stats.time} 分钟阅读
+          </span>
+        </div>
+      </div>
 
       {/* 图片选择弹窗 */}
       {showImagePicker && (
@@ -458,5 +433,202 @@ const TextEditor: React.FC<TextEditorProps> = ({
     </div>
   );
 };
+
+// ─── CSS 作用域工具函数 ───
+
+/**
+ * 构建编辑器作用域 CSS
+ * 将主题 CSS 的选择器限定在 .editor-paper 内，避免影响全局
+ */
+function buildScopedCSS(presetCss: string, customCSS: string, extraCSS: string): string {
+  const bodyStyles = extractBodyStyles(presetCss);
+
+  return `
+    .editor-paper {
+      ${sanitizeBodyStyles(bodyStyles)}
+      width: 100%;
+      max-width: none;
+      margin: 0;
+      padding: 0;
+    }
+    ${scopeCSS(presetCss)}
+    ${scopeCSS(customCSS)}
+    ${scopeCSS(extraCSS)}
+
+    .editor-paper .ProseMirror {
+      outline: none !important;
+      min-height: 100%;
+      height: 100%;
+      caret-color: #3b82f6;
+    }
+
+    .editor-paper p.caption {
+      text-indent: 0;
+      text-align: center;
+      font-size: 0.9em;
+      color: #6b7280;
+      margin-top: -0.5em;
+      margin-bottom: 1.5em;
+    }
+
+    .editor-paper img {
+      cursor: pointer;
+      transition: all 0.2s ease-in-out;
+      max-width: 100%;
+      height: auto;
+    }
+    .editor-paper img.ProseMirror-selectednode {
+      outline: 3px solid rgba(59, 130, 246, 0.8);
+      outline-offset: 2px;
+      box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+    }
+
+    .editor-paper fy {
+      display: none;
+      page-break-after: always;
+      break-after: page;
+    }
+
+    .editor-paper .image-missing {
+      display: inline-block;
+      max-width: 100%;
+      height: auto;
+      border-radius: 8px;
+      cursor: pointer;
+      transition: all 0.2s;
+      /* SVG占位符会显示文字，不需要::before伪元素 */
+    }
+    .editor-paper .image-missing:hover {
+      opacity: 0.8;
+      transform: scale(1.02);
+    }
+  `;
+}
+
+/** 从 CSS 中提取 body {} 块的样式 */
+function extractBodyStyles(css: string): string {
+  const match = css.match(/body\s*\{([^}]*)\}/);
+  return match?.[1] || '';
+}
+
+/** 过滤掉布局相关的样式属性 */
+function sanitizeBodyStyles(styles: string): string {
+  const blockedProps = new Set([
+    'width', 'min-width', 'max-width',
+    'height', 'min-height', 'max-height',
+    'margin', 'margin-left', 'margin-right', 'margin-top', 'margin-bottom',
+    'padding', 'padding-left', 'padding-right', 'padding-top', 'padding-bottom',
+    'overflow', 'overflow-x', 'overflow-y',
+    'position', 'left', 'right', 'top', 'bottom', 'display',
+  ]);
+
+  return styles
+    .split(';')
+    .map((rule) => rule.trim())
+    .filter(Boolean)
+    .filter((rule) => {
+      const colonIndex = rule.indexOf(':');
+      if (colonIndex === -1) return false;
+      const property = rule.slice(0, colonIndex).trim().toLowerCase();
+      return !blockedProps.has(property);
+    })
+    .join(';\n      ');
+}
+
+/**
+ * CSS 作用域函数
+ * 将选择器限定在 .editor-paper 内
+ */
+function scopeCSS(css: string): string {
+  if (!css) return '';
+
+  // 去掉注释
+  const stripped = css.replace(/\/\*[\s\S]*?\*\//g, '');
+  const result: string[] = [];
+  let i = 0;
+
+  while (i < stripped.length) {
+    // 跳过空白
+    while (i < stripped.length && /\s/.test(stripped[i])) i++;
+    if (i >= stripped.length) break;
+
+    // @规则
+    if (stripped[i] === '@') {
+      const atStart = i;
+      while (i < stripped.length && stripped[i] !== '{' && stripped[i] !== ';') i++;
+      const atHeader = stripped.slice(atStart, i).trim();
+
+      if (i < stripped.length && stripped[i] === ';') {
+        result.push(atHeader + ';');
+        i++;
+        continue;
+      }
+
+      if (i < stripped.length && stripped[i] === '{') {
+        i++;
+        let depth = 1;
+        const blockStart = i;
+        while (i < stripped.length && depth > 0) {
+          if (stripped[i] === '{') depth++;
+          else if (stripped[i] === '}') depth--;
+          if (depth > 0) i++;
+        }
+        const blockContent = stripped.slice(blockStart, i);
+        i++;
+
+        if (/^@(media|supports|layer)/i.test(atHeader)) {
+          result.push(`${atHeader} {\n${scopeCSS(blockContent)}\n}`);
+        } else {
+          result.push(`${atHeader} {${blockContent}}`);
+        }
+        continue;
+      }
+    }
+
+    // 普通规则
+    const ruleStart = i;
+    while (i < stripped.length && stripped[i] !== '{') i++;
+    if (i >= stripped.length) break;
+
+    const rawSelector = stripped.slice(ruleStart, i).trim();
+    i++;
+
+    let depth = 1;
+    const declStart = i;
+    while (i < stripped.length && depth > 0) {
+      if (stripped[i] === '{') depth++;
+      else if (stripped[i] === '}') depth--;
+      if (depth > 0) i++;
+    }
+    const declarations = stripped.slice(declStart, i).trim();
+    i++;
+
+    if (!rawSelector) continue;
+
+    // 处理选择器
+    const scopedSelectors = rawSelector
+      .split(',')
+      .map((sel) => {
+        sel = sel.trim();
+        if (!sel) return '';
+
+        if (/^(body|html)(\s|$|\.|#|\[|:|,)/i.test(sel) || /^(body|html)$/i.test(sel)) {
+          return sel.replace(/^(body|html)/i, '.editor-paper');
+        }
+        if (sel.startsWith(':root')) {
+          return sel.replace(/^:root/, '.editor-paper');
+        }
+        return `.editor-paper ${sel}`;
+      })
+      .filter(Boolean)
+      .join(', ');
+
+    if (scopedSelectors) {
+      result.push(`${scopedSelectors} {\n  ${declarations}\n}`);
+    }
+  }
+
+  return result.join('\n');
+}
 
 export default TextEditor;
