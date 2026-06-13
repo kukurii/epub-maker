@@ -68,9 +68,6 @@ export const parseEpub = async (file: File, options?: { imageStartId?: number; c
             if (mediaType.startsWith('image/')) {
                 const imageFile = zip.file(zipPath);
                 if (imageFile) {
-                    // Pre-assign ID to ensure sequence
-                    const assetId = (currentImageId++).toString().padStart(3, '0');
-
                     const data = await imageFile.async('base64');
                     const dataUrl = `data:${mediaType};base64,${data}`;
 
@@ -79,8 +76,12 @@ export const parseEpub = async (file: File, options?: { imageStartId?: number; c
 
                     // 🎯 使用统一命名规则：img_001.jpg, img_002.png, ...
                     const originalName = href.split('/').pop() || 'image.jpg';
-                    const unifiedName = generateImageFilename(currentImageId - 1, originalName);
+                    const unifiedName = generateImageFilename(currentImageId, originalName);
                     const safeName = sanitizeFilename(unifiedName);
+
+                    // ID 和索引保持一致
+                    const assetId = currentImageId.toString().padStart(3, '0');
+                    currentImageId++; // 递增计数器
 
                     const asset: ImageAsset = {
                         id: assetId,
