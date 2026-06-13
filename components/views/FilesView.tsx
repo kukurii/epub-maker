@@ -1,9 +1,9 @@
 import React, { useState } from 'react';
 import { Settings2, Library, BookOpen, FileType, Cloud, X, ChevronUp, ChevronDown, FileCode } from 'lucide-react';
 import { Chapter, ProjectData, ImageAsset, ExtraFile, Metadata } from '../../types';
-import { parseTxtToChapters } from '../../services/textParser';
-import { parseEpub } from '../../services/epubImport';
-import { parseHtmlToChapters } from '../../services/htmlParser';
+import { parseTxtToChapters } from '../../services/parser/text';
+import { parseEpub } from '../../services/epub/importer';
+import { parseHtmlToChapters } from '../../services/parser/html';
 import { dialog } from '../../services/dialog';
 
 interface FilesViewProps {

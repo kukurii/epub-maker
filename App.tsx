@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { ViewMode } from './types';
 import Sidebar from './components/layout/Sidebar';
-import { generateEpub } from './services/epubExport';
+import { generateEpub } from './services/epub/generator';
 import { Menu, PowerOff, Cloud, CheckCircle2, AlertTriangle } from 'lucide-react';
 
 import LoadingOverlay from './components/layout/LoadingOverlay';

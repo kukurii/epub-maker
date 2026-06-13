@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Chapter, ImageAsset } from '../../types';
 import { Plus, Search, Eye, Sparkles, Layers3 } from 'lucide-react';
 import { dialog } from '../../services/dialog';
-import { CleanupOptions } from '../../services/bookAnalysis';
+import { CleanupOptions } from '../../services/analysis/book';
 import { getTocTitle } from '../../services/toc';
 import { generateUniqueId } from '../../utils/idGenerator';
 import { useDragSort } from '../../hooks/useDragSort';

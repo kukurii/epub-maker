@@ -8,7 +8,7 @@ import {
   CleanupRuleKey,
   executeCleanup,
   previewCleanup,
-} from '../../services/bookAnalysis';
+} from '../../services/analysis/book';
 
 interface CleanupPanelProps {
   chapters: Chapter[];
