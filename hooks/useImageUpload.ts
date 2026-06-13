@@ -247,6 +247,9 @@ export const useImageUpload = ({
   };
 };
 
+// ─── 类型导出 ───
+export type UseImageUploadReturn = ReturnType<typeof useImageUpload>;
+
 /**
  * 读取文件为 Data URL
  */
