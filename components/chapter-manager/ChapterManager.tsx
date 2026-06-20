@@ -1,9 +1,9 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Chapter, ImageAsset } from '../../types';
-import { Plus, Search, Eye, Sparkles, Layers3 } from 'lucide-react';
+import { Layers3, ListTree, Plus, Search, ShieldAlert, Sparkles } from 'lucide-react';
 import { dialog } from '../../services/dialog';
 import { CleanupOptions } from '../../services/analysis/book';
-import { getTocTitle } from '../../services/toc';
+import { getTocStats, getTocTitle } from '../../services/toc';
 import { generateUniqueId } from '../../utils/idGenerator';
 import { useDragSort } from '../../hooks/useDragSort';
 
@@ -13,6 +13,7 @@ import TocPreview from './TocPreview';
 import BookSearchPanel from './BookSearchPanel';
 import BatchPanel from './BatchPanel';
 import CleanupPanel from './CleanupPanel';
+import SensitiveWordsPanel from './SensitiveWordsPanel';
 
 interface ChapterManagerProps {
   chapters: Chapter[];
@@ -22,20 +23,13 @@ interface ChapterManagerProps {
   onScrollToAnchor: (chapterId: string, anchorId: string) => void;
   onFocusSearchText: (chapterId: string, searchText: string) => void;
   onUpdateChapters: (chapters: Chapter[]) => void;
+  customTocTitle?: string;
+  onUpdateTocTitle: (title: string | undefined) => void;
   className?: string;
 }
 
-/** 面板类型：同一时间只显示一个面板 */
-type PanelType = 'none' | 'search' | 'cleanup' | 'batch';
+type PanelType = 'none' | 'search' | 'cleanup' | 'batch' | 'sensitiveWords';
 
-/**
- * 目录管理主组件
- *
- * 职责：
- * - 渲染章节列表和标题搜索
- * - 管理功能面板（全书搜索、批量操作、清理）的显示切换
- * - 提供章节的增删改查操作
- */
 const ChapterManager: React.FC<ChapterManagerProps> = ({
   chapters,
   images,
@@ -44,13 +38,13 @@ const ChapterManager: React.FC<ChapterManagerProps> = ({
   onScrollToAnchor,
   onFocusSearchText,
   onUpdateChapters,
+  customTocTitle,
+  onUpdateTocTitle,
   className,
 }) => {
-  // ─── 本地状态 ───
-  const [titleFilter, setTitleFilter] = useState('');
   const [activePanel, setActivePanel] = useState<PanelType>('none');
   const [editingChapter, setEditingChapter] = useState<Chapter | null>(null);
-  const [showTocPreview, setShowTocPreview] = useState(false);
+  const [showTocEditor, setShowTocEditor] = useState(false);
   const [selectedChapterIds, setSelectedChapterIds] = useState<Set<string>>(new Set());
   const [cleanupOptions, setCleanupOptions] = useState<CleanupOptions>({
     removeEmptyParagraphs: true,
@@ -60,43 +54,27 @@ const ChapterManager: React.FC<ChapterManagerProps> = ({
     removeInlineStyles: false,
   });
 
-  // ─── 清理无效的批量选择 ID ───
   useEffect(() => {
-    const validIds = new Set(chapters.map((ch) => ch.id));
+    const validIds = new Set(chapters.map((chapter) => chapter.id));
     setSelectedChapterIds((prev) => {
       const cleaned = new Set(Array.from(prev).filter((id) => validIds.has(id)));
       return cleaned.size === prev.size ? prev : cleaned;
     });
   }, [chapters]);
 
-  // ─── 计算 ───
-  const tocTitle = useMemo(() => getTocTitle(chapters), [chapters]);
-
-  // 标题搜索过滤
-  const filteredChapters = useMemo(() => {
-    const lowerFilter = titleFilter.toLowerCase();
-    return chapters
-      .map((ch, idx) => ({ ...ch, originalIndex: idx }))
-      .filter(
-        (ch) =>
-          ch.title.toLowerCase().includes(lowerFilter) ||
-          ch.subItems?.some((item) => item.text.toLowerCase().includes(lowerFilter)),
-      );
-  }, [chapters, titleFilter]);
-
-  const filteredIds = useMemo(() => filteredChapters.map((ch) => ch.id), [filteredChapters]);
-
-  // ─── 拖拽排序 ───
+  const tocTitle = useMemo(() => customTocTitle?.trim() || getTocTitle(chapters), [chapters, customTocTitle]);
+  const tocStats = useMemo(() => getTocStats(chapters), [chapters]);
+  const filteredChapters = useMemo(
+    () => chapters.map((chapter, index) => ({ ...chapter, originalIndex: index })),
+    [chapters],
+  );
+  const filteredIds = useMemo(() => chapters.map((chapter) => chapter.id), [chapters]);
   const dragSort = useDragSort(chapters, onUpdateChapters);
 
-  // ─── 切换面板（互斥） ───
   const togglePanel = useCallback((panel: PanelType) => {
     setActivePanel((prev) => (prev === panel ? 'none' : panel));
   }, []);
 
-  // ─── 章节操作 ───
-
-  /** 添加新章节 */
   const handleAdd = useCallback(() => {
     const newChapter: Chapter = {
       id: generateUniqueId(),
@@ -109,98 +87,97 @@ const ChapterManager: React.FC<ChapterManagerProps> = ({
     onSelectChapter(newChapter.id);
   }, [chapters, onUpdateChapters, onSelectChapter]);
 
-  /** 移动章节 */
   const handleMove = useCallback(
     (index: number, direction: 'up' | 'down') => {
       if (direction === 'up' && index <= 0) return;
       if (direction === 'down' && index >= chapters.length - 1) return;
 
-      const newChapters = [...chapters];
+      const nextChapters = [...chapters];
       const swapIndex = direction === 'up' ? index - 1 : index + 1;
-      [newChapters[index], newChapters[swapIndex]] = [newChapters[swapIndex], newChapters[index]];
-      onUpdateChapters(newChapters);
+      [nextChapters[index], nextChapters[swapIndex]] = [nextChapters[swapIndex], nextChapters[index]];
+      onUpdateChapters(nextChapters);
     },
     [chapters, onUpdateChapters],
   );
 
-  /** 删除章节 */
   const handleDelete = useCallback(
     (index: number) => {
       const deletedChapter = chapters[index];
-      const newChapters = chapters.filter((_, i) => i !== index);
-      onUpdateChapters(newChapters);
+      const nextChapters = chapters.filter((_, currentIndex) => currentIndex !== index);
+      onUpdateChapters(nextChapters);
 
-      // 如果删除的是当前选中的章节，选中相邻的
-      if (deletedChapter && deletedChapter.id === currentChapterId) {
-        if (newChapters.length > 0) {
-          const nextIndex = Math.min(index, newChapters.length - 1);
-          onSelectChapter(newChapters[nextIndex].id);
-        }
-        // 如果列表为空，不调用 onSelectChapter（避免传空字符串）
+      if (deletedChapter?.id === currentChapterId && nextChapters.length > 0) {
+        const nextIndex = Math.min(index, nextChapters.length - 1);
+        onSelectChapter(nextChapters[nextIndex].id);
       }
     },
     [chapters, currentChapterId, onUpdateChapters, onSelectChapter],
   );
 
-  /** 合并下一章 */
   const handleMergeNext = useCallback(
     async (index: number) => {
       if (index >= chapters.length - 1) return;
-      if (!(await dialog.confirm(`确定要将 "${chapters[index].title}" 与下一章合并吗？`))) return;
 
       const current = chapters[index];
       const next = chapters[index + 1];
+      const confirmed = await dialog.confirm(
+        `确定将「${current.title || '当前章节'}」与「${next.title || '下一章'}」合并吗？`,
+        '合并章节',
+      );
+      if (!confirmed) return;
+
       const mergedChapter: Chapter = {
         ...current,
-        content: `${current.content}\n<hr class="merge-divider"/>\n${next.content}`,
+        content: `${current.content || ''}\n<hr class="merge-divider"/>\n${next.content || ''}`,
         subItems: [...(current.subItems || []), ...(next.subItems || [])],
+        excludeFromToc: current.excludeFromToc && next.excludeFromToc,
       };
 
-      const newChapters = [...chapters];
-      newChapters[index] = mergedChapter;
-      newChapters.splice(index + 1, 1);
-      onUpdateChapters(newChapters);
+      const nextChapters = [...chapters];
+      nextChapters[index] = mergedChapter;
+      nextChapters.splice(index + 1, 1);
+      onUpdateChapters(nextChapters);
+
+      if (currentChapterId === next.id) {
+        onSelectChapter(current.id);
+      }
     },
-    [chapters, onUpdateChapters],
+    [chapters, currentChapterId, onUpdateChapters, onSelectChapter],
   );
 
-  /** 切换 TOC 包含/排除 */
   const handleToggleToc = useCallback(
     (index: number) => {
-      const newChapters = [...chapters];
-      const ch = newChapters[index];
-      newChapters[index] = { ...ch, excludeFromToc: !ch.excludeFromToc };
-      onUpdateChapters(newChapters);
+      const nextChapters = [...chapters];
+      const chapter = nextChapters[index];
+      nextChapters[index] = { ...chapter, excludeFromToc: !chapter.excludeFromToc };
+      onUpdateChapters(nextChapters);
     },
     [chapters, onUpdateChapters],
   );
 
-  /** 保存章节编辑（标题 + ID） */
   const handleSaveEdit = useCallback(
     async (newId: string, newTitle: string) => {
       if (!editingChapter) return;
 
-      const newChapters = chapters.map((c) => {
-        if (c.id !== editingChapter.id) return c;
+      const nextChapters = chapters.map((chapter) => {
+        if (chapter.id !== editingChapter.id) return chapter;
 
-        let newContent = c.content;
-        // 如果标题变了，同步更新 content 中第一个 H1 的文字
-        if (newTitle !== editingChapter.title && newContent) {
+        let nextContent = chapter.content;
+        if (newTitle !== editingChapter.title && nextContent) {
           const parser = new DOMParser();
-          const doc = parser.parseFromString(newContent, 'text/html');
+          const doc = parser.parseFromString(nextContent, 'text/html');
           const firstH1 = doc.body.querySelector('h1');
           if (firstH1) {
             firstH1.textContent = newTitle;
-            newContent = doc.body.innerHTML;
+            nextContent = doc.body.innerHTML;
           }
         }
 
-        return { ...c, id: newId, title: newTitle, content: newContent };
+        return { ...chapter, id: newId, title: newTitle, content: nextContent };
       });
 
-      onUpdateChapters(newChapters);
+      onUpdateChapters(nextChapters);
 
-      // 如果正在编辑的章节是当前章节，且 ID 变了，需要同步
       if (currentChapterId === editingChapter.id && newId !== editingChapter.id) {
         onSelectChapter(newId);
       }
@@ -210,13 +187,10 @@ const ChapterManager: React.FC<ChapterManagerProps> = ({
     [editingChapter, chapters, currentChapterId, onUpdateChapters, onSelectChapter],
   );
 
-  /** 开始编辑章节 */
-  const handleStartEdit = useCallback((e: React.MouseEvent, chapter: Chapter) => {
-    e.stopPropagation();
+  const handleStartEdit = useCallback((event: React.MouseEvent, chapter: Chapter) => {
+    event.stopPropagation();
     setEditingChapter(chapter);
   }, []);
-
-  // ─── 批量选择操作 ───
 
   const toggleBatchSelect = useCallback((chapterId: string) => {
     setSelectedChapterIds((prev) => {
@@ -240,83 +214,68 @@ const ChapterManager: React.FC<ChapterManagerProps> = ({
     });
   }, [filteredIds, selectedChapterIds]);
 
-  // ─── 渲染 ───
   return (
     <div
-      className={`h-full flex flex-col bg-white/70 backdrop-blur-xl border-r border-gray-200/50
-        relative flex-shrink-0 ${className || 'w-80'}`}
+      className={`relative flex h-full min-w-[360px] flex-shrink-0 flex-col border-r border-gray-200/50 bg-white/70 backdrop-blur-xl ${
+        className || 'w-96'
+      }`}
     >
-      {/* 顶部区：标题 + 功能按钮 + 搜索 + 面板 */}
-      <div className="pt-6 pb-2 px-4 sticky top-0 z-10 bg-white/80 backdrop-blur-lg border-b border-gray-200/50">
-        {/* 标题行 */}
-        <div className="flex justify-between items-center mb-3 gap-3">
-          <h2 className="text-xl font-bold text-gray-900 tracking-tight">目录</h2>
-          <div className="flex items-center space-x-1.5">
-            {/* 全书搜索 */}
+      <div className="sticky top-0 z-10 border-b border-gray-200/50 bg-white/90 px-4 pb-3 pt-4 backdrop-blur-lg">
+        <div className="flex items-center justify-between gap-3">
+          <h2 className="shrink-0 text-2xl font-bold tracking-tight text-gray-900">目录</h2>
+
+          <div className="flex shrink-0 items-center gap-1.5">
             <PanelToggleButton
               icon={<Search size={16} />}
               title="全书搜索"
               active={activePanel === 'search'}
               onClick={() => togglePanel('search')}
-              activeClass="bg-blue-100 text-blue-600"
-              hoverClass="text-gray-500 hover:text-blue-600 hover:bg-blue-50"
             />
-            {/* 一键清理 */}
             <PanelToggleButton
               icon={<Sparkles size={16} />}
               title="一键清理"
               active={activePanel === 'cleanup'}
               onClick={() => togglePanel('cleanup')}
-              activeClass="bg-amber-100 text-amber-700"
-              hoverClass="text-gray-500 hover:text-amber-700 hover:bg-amber-50"
             />
-            {/* 批量操作 */}
             <PanelToggleButton
               icon={<Layers3 size={16} />}
               title="批量操作"
               active={activePanel === 'batch'}
               onClick={() => togglePanel('batch')}
-              activeClass="bg-indigo-100 text-indigo-700"
-              hoverClass="text-gray-500 hover:text-indigo-600 hover:bg-indigo-50"
             />
-            {/* TOC 预览 */}
-            <button
-              onClick={() => setShowTocPreview(true)}
-              className="text-gray-500 hover:text-indigo-600 font-medium text-sm flex items-center
-                hover:bg-indigo-50 px-2 py-1 rounded-lg transition-colors"
-              title="预览总目录"
-            >
-              <Eye size={16} />
-            </button>
-            {/* 添加章节 */}
+            <PanelToggleButton
+              icon={<ShieldAlert size={16} />}
+              title="敏感词修正"
+              active={activePanel === 'sensitiveWords'}
+              onClick={() => togglePanel('sensitiveWords')}
+            />
             <button
               onClick={handleAdd}
-              className="text-blue-500 hover:text-blue-600 font-medium text-sm flex items-center
-                bg-blue-50 px-2 py-1 rounded-lg transition-colors"
+              className="inline-flex h-9 w-9 items-center justify-center rounded-xl bg-blue-50 text-blue-500 transition-colors hover:bg-blue-100 hover:text-blue-600"
+              title="添加章节"
             >
-              <Plus size={16} className="mr-1" /> 添加
+              <Plus size={17} />
             </button>
           </div>
         </div>
 
-        {/* 标题搜索框 */}
-        <div className="relative group">
-          <Search
-            className="absolute left-3 top-2 text-gray-400 group-focus-within:text-blue-500 transition-colors"
-            size={16}
-          />
-          <input
-            type="text"
-            placeholder="搜索标题..."
-            value={titleFilter}
-            onChange={(e) => setTitleFilter(e.target.value)}
-            className="w-full bg-[#767680]/10 text-sm rounded-xl pl-9 pr-3 py-1.5
-              focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:bg-white
-              transition-all placeholder:text-gray-500"
-          />
+        <div className="mt-3 flex items-center gap-2">
+          <button
+            onClick={() => setShowTocEditor(true)}
+            className="inline-flex h-10 flex-1 items-center justify-center gap-2 rounded-2xl bg-indigo-600 px-3 text-sm font-bold text-white shadow-md shadow-indigo-500/20 transition-colors hover:bg-indigo-700"
+            title="编辑导出目录"
+          >
+            <ListTree size={16} />
+            编辑目录
+          </button>
+
+          <div className="flex shrink-0 items-center gap-1 rounded-2xl bg-gray-50 px-2 py-1.5 text-[11px] font-semibold text-gray-500">
+            <span>{tocStats.includedChapters} 入目录</span>
+            <span className="text-gray-300">/</span>
+            <span>{tocStats.totalChapters} 总数</span>
+          </div>
         </div>
 
-        {/* 功能面板（互斥显示） */}
         {activePanel === 'search' && (
           <BookSearchPanel chapters={chapters} onFocusSearchText={onFocusSearchText} />
         )}
@@ -342,10 +301,16 @@ const ChapterManager: React.FC<ChapterManagerProps> = ({
             onUpdateChapters={onUpdateChapters}
           />
         )}
+        {activePanel === 'sensitiveWords' && (
+          <SensitiveWordsPanel
+            chapters={chapters}
+            onUpdateChapters={onUpdateChapters}
+            onFocusSearchText={onFocusSearchText}
+          />
+        )}
       </div>
 
-      {/* 章节列表区 */}
-      <div className="flex-1 overflow-y-auto px-3 py-2 space-y-1 custom-scrollbar">
+      <div className="flex-1 overflow-y-auto px-3 py-3 custom-scrollbar">
         {filteredChapters.map((chapterItem) => (
           <ChapterItem
             key={chapterItem.id}
@@ -362,26 +327,24 @@ const ChapterManager: React.FC<ChapterManagerProps> = ({
             selectionMode={activePanel === 'batch'}
             batchSelected={selectedChapterIds.has(chapterItem.id)}
             onToggleBatchSelect={toggleBatchSelect}
-            // 拖拽排序支持
-            onDragStart={(e) => dragSort.handleDragStart(e, chapterItem.originalIndex)}
+            onDragStart={(event) => dragSort.handleDragStart(event, chapterItem.originalIndex)}
             onDragEnd={dragSort.handleDragEnd}
-            onDragOver={(e) => dragSort.handleDragOver(e, chapterItem.originalIndex)}
+            onDragOver={(event) => dragSort.handleDragOver(event, chapterItem.originalIndex)}
             onDragLeave={dragSort.handleDragLeave}
-            onDrop={(e) => dragSort.handleDrop(e, chapterItem.originalIndex)}
+            onDrop={(event) => dragSort.handleDrop(event, chapterItem.originalIndex)}
             isDragging={dragSort.draggedItem?.index === chapterItem.originalIndex}
             isDropTarget={dragSort.dropTarget === chapterItem.originalIndex}
           />
         ))}
 
         {chapters.length === 0 && (
-          <div className="text-center text-gray-400 py-20">
-            <p className="text-sm">暂无内容</p>
-            <p className="text-xs mt-2">点击上方"添加"创建第一章</p>
+          <div className="rounded-2xl border border-dashed border-gray-200 bg-white/60 py-12 text-center">
+            <p className="text-sm font-medium text-gray-400">暂无章节</p>
+            <p className="mt-1 text-xs text-gray-400">点击右上角加号创建第一章</p>
           </div>
         )}
       </div>
 
-      {/* 弹窗 */}
       {editingChapter && (
         <ChapterEditDialog
           chapter={editingChapter}
@@ -390,30 +353,30 @@ const ChapterManager: React.FC<ChapterManagerProps> = ({
           onClose={() => setEditingChapter(null)}
         />
       )}
-      {showTocPreview && (
+      {showTocEditor && (
         <TocPreview
           chapters={chapters}
           tocTitle={tocTitle}
-          onClose={() => setShowTocPreview(false)}
+          onUpdateChapters={onUpdateChapters}
+          onUpdateTocTitle={onUpdateTocTitle}
+          onClose={() => setShowTocEditor(false)}
         />
       )}
     </div>
   );
 };
 
-/** 面板切换按钮 */
 const PanelToggleButton: React.FC<{
   icon: React.ReactNode;
   title: string;
   active: boolean;
   onClick: () => void;
-  activeClass: string;
-  hoverClass: string;
-}> = ({ icon, title, active, onClick, activeClass, hoverClass }) => (
+}> = ({ icon, title, active, onClick }) => (
   <button
     onClick={onClick}
-    className={`font-medium text-sm flex items-center px-2 py-1 rounded-lg transition-colors
-      ${active ? activeClass : hoverClass}`}
+    className={`inline-flex h-9 w-9 items-center justify-center rounded-xl transition-colors ${
+      active ? 'bg-indigo-100 text-indigo-700' : 'text-gray-500 hover:bg-gray-100 hover:text-gray-700'
+    }`}
     title={title}
   >
     {icon}

@@ -87,6 +87,8 @@ export interface ProjectData {
   isPresetStyleActive?: boolean;
   customCSS: string;
   coverGeneratorState?: CoverGeneratorState;
+  customTocTitle?: string;
+  customTocXhtml?: string;
 }
 
 export type ViewMode =

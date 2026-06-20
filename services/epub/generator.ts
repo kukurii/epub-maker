@@ -1,7 +1,7 @@
 import JSZip from 'jszip';
 import saveAs from 'file-saver';
-import { ProjectData } from '../../types';
-import { getTocTitle } from '../toc';
+import { Chapter, ProjectData, TocItem } from '../../types';
+import { chapterHref, escapeXml, getTocTitle, renderTocXhtml } from '../toc';
 import { PRESET_STYLES } from '../../themes';
 
 // Helper to ensure HTML is valid XHTML for EPUB (self-closing tags, entities)
@@ -29,9 +29,35 @@ const fixXHTML = (html: string): string => {
     return fixed;
 };
 
+type TocChapterNode = {
+    chapter: Chapter;
+    index: number;
+    children: TocChapterNode[];
+};
+
+const buildTocTree = (chapters: Chapter[]): TocChapterNode[] => {
+    const roots: TocChapterNode[] = [];
+    let lastTopLevel: TocChapterNode | null = null;
+
+    chapters.forEach((chapter, index) => {
+        if (chapter.excludeFromToc) return;
+
+        const node: TocChapterNode = { chapter, index, children: [] };
+        if (chapter.level === 2 && lastTopLevel) {
+            lastTopLevel.children.push(node);
+            return;
+        }
+
+        roots.push(node);
+        lastTopLevel = node;
+    });
+
+    return roots;
+};
+
 export const generateEpub = async (project: ProjectData) => {
     const zip = new JSZip();
-    const tocTitle = getTocTitle(project.chapters);
+    const tocTitle = project.customTocTitle?.trim() || getTocTitle(project.chapters);
 
     // 1. Mimetype (must be first, uncompressed)
     zip.file('mimetype', 'application/epub+zip', { compression: "STORE" });
@@ -215,32 +241,8 @@ export const generateEpub = async (project: ProjectData) => {
     });
 
     // --- TOC.xhtml (Visual Table of Contents) ---
-    let tocHtmlItems = '';
-    project.chapters.forEach((chapter, index) => {
-        if (chapter.excludeFromToc) return;
-
-        const indentClass = chapter.level === 2 ? 'toc-level-2' : 'toc-level-1';
-        tocHtmlItems += `<li class="toc-item ${indentClass}"><a class="toc-link" href="chapter_${index}.xhtml">${chapter.title}</a></li>\n`;
-    });
-
-    const tocXhtml = `<?xml version="1.0" encoding="utf-8"?>
-<!DOCTYPE html>
-<html xmlns="http://www.w3.org/1999/xhtml">
-<head>
-  <title>Table of Contents</title>
-  <link rel="stylesheet" type="text/css" href="style.css"/>
-</head>
-<body>
-  <h1>目录</h1>
-  <ul class="toc-list">
-    ${tocHtmlItems}
-  </ul>
-</body>
-</html>`;
-    const finalTocXhtml = tocXhtml
-        .replace('<title>Table of Contents</title>', `<title>${tocTitle}</title>`)
-        .replace(/<h1>.*?<\/h1>/, `<h1>${tocTitle}</h1>`);
-    oebps.file('toc.xhtml', finalTocXhtml);
+    const tocXhtml = project.customTocXhtml?.trim() || renderTocXhtml(project.chapters, tocTitle);
+    oebps.file('toc.xhtml', tocXhtml);
 
     // --- OPF (Package File) ---
     const uid = `urn:uuid:${Date.now()}`;
@@ -329,7 +331,7 @@ export const generateEpub = async (project: ProjectData) => {
   </guide>
 </package>`;
 
-    const finalOpfContent = opfContent.replace('title="Table of Contents"', `title="${tocTitle}"`);
+    const finalOpfContent = opfContent.replace('title="Table of Contents"', `title="${escapeXml(tocTitle)}"`);
     oebps.file('content.opf', finalOpfContent);
 
     // --- NCX ---
@@ -346,68 +348,49 @@ export const generateEpub = async (project: ProjectData) => {
 
     navPoints += `
     <navPoint id="navPoint-toc" playOrder="${playOrder++}">
-      <navLabel><text>目录</text></navLabel>
+      <navLabel><text>${escapeXml(tocTitle)}</text></navLabel>
       <content src="toc.xhtml"/>
     </navPoint>`;
 
-    let currentLevel = 0;
+    const renderAnchorNavPoint = (chapterIndex: number, item: TocItem, itemIndex: number): string => `
+      <navPoint id="navPoint-${chapterIndex}-anchor-${itemIndex}" playOrder="${playOrder++}">
+        <navLabel><text>${escapeXml(item.text || '小节')}</text></navLabel>
+        <content src="${escapeXml(chapterHref(chapterIndex, item.id))}"/>
+      </navPoint>`;
 
-    project.chapters.forEach((c, i) => {
-        if (c.excludeFromToc) return;
+    const renderChapterNavPoint = (node: TocChapterNode): string => {
+        const order = playOrder++;
+        const anchorPoints = (node.chapter.subItems || [])
+            .map((item, itemIndex) => renderAnchorNavPoint(node.index, item, itemIndex))
+            .join('');
+        const childPoints = node.children.map(renderChapterNavPoint).join('');
 
-        if (c.level === 1) {
-            if (currentLevel === 2) {
-                navPoints += `</navPoint>\n`;
-                navPoints += `</navPoint>\n`;
-            } else if (currentLevel === 1) {
-                navPoints += `</navPoint>\n`;
-            }
+        return `
+    <navPoint id="navPoint-${node.index}" playOrder="${order}">
+      <navLabel><text>${escapeXml(node.chapter.title || '无标题章节')}</text></navLabel>
+      <content src="${chapterHref(node.index)}"/>
+      ${anchorPoints}
+      ${childPoints}
+    </navPoint>`;
+    };
 
-            navPoints += `<navPoint id="navPoint-${i}" playOrder="${playOrder++}">
-          <navLabel><text>${c.title}</text></navLabel>
-          <content src="chapter_${i}.xhtml"/>\n`;
-
-            currentLevel = 1;
-        }
-        else if (c.level === 2) {
-            if (currentLevel === 2) {
-                navPoints += `</navPoint>\n`;
-            }
-
-            navPoints += `<navPoint id="navPoint-${i}" playOrder="${playOrder++}">
-          <navLabel><text>${c.title}</text></navLabel>
-          <content src="chapter_${i}.xhtml"/>\n`;
-
-            currentLevel = 2;
-        }
-    });
-
-    if (currentLevel === 2) {
-        navPoints += `</navPoint>\n`;
-        navPoints += `</navPoint>\n`;
-    } else if (currentLevel === 1) {
-        navPoints += `</navPoint>\n`;
-    }
+    navPoints += buildTocTree(project.chapters).map(renderChapterNavPoint).join('');
 
     const ncxContent = `<?xml version="1.0" encoding="utf-8"?>
 <ncx xmlns="http://www.daisy.org/z3986/2005/ncx/" version="2005-1">
   <head>
     <meta name="dtb:uid" content="${uid}"/>
-    <meta name="dtb:depth" content="2"/>
+    <meta name="dtb:depth" content="3"/>
     <meta name="dtb:totalPageCount" content="0"/>
     <meta name="dtb:maxPageNumber" content="0"/>
   </head>
-  <docTitle><text>${project.metadata.title}</text></docTitle>
+  <docTitle><text>${escapeXml(project.metadata.title)}</text></docTitle>
   <navMap>
     ${navPoints}
   </navMap>
 </ncx>`;
 
-    const finalNcxContent = ncxContent.replace(
-        /<navPoint id="navPoint-toc"[\s\S]*?<navLabel><text>.*?<\/text><\/navLabel>/,
-        `<navPoint id="navPoint-toc" playOrder="${coverFilename ? 2 : 1}">\n      <navLabel><text>${tocTitle}</text></navLabel>`,
-    );
-    oebps.file('toc.ncx', finalNcxContent);
+    oebps.file('toc.ncx', ncxContent);
 
     const content = await zip.generateAsync({ type: 'blob' });
     saveAs(content, `${project.metadata.title || 'ebook'}.epub`);

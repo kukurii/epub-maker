@@ -14,14 +14,13 @@ class DialogService {
     subscribe(listener: (options: DialogOptions, callback: DialogCallback) => void) {
         this.listeners.push(listener);
         return () => {
-            this.listeners = this.listeners.filter(l => l !== listener);
+            this.listeners = this.listeners.filter((item) => item !== listener);
         };
     }
 
     private show(options: DialogOptions): Promise<boolean> {
-        return new Promise(resolve => {
+        return new Promise((resolve) => {
             if (this.listeners.length === 0) {
-                // Fallback to native if UI is not mounted yet
                 if (options.type === 'confirm') {
                     resolve(window.confirm(options.message));
                 } else {
@@ -31,16 +30,22 @@ class DialogService {
                 return;
             }
 
-            this.listeners.forEach(listener => listener(options, resolve));
+            this.listeners.forEach((listener) => listener(options, resolve));
         });
     }
 
     alert(message: string, title?: string): Promise<void> {
-        return this.show({ type: 'alert', message, title, confirmText: '确定' }).then(() => { });
+        return this.show({ type: 'alert', message, title, confirmText: '确定' }).then(() => {});
     }
 
     confirm(message: string, title?: string): Promise<boolean> {
-        return this.show({ type: 'confirm', message, title, confirmText: '确定', cancelText: '取消' });
+        return this.show({
+            type: 'confirm',
+            message,
+            title,
+            confirmText: '确定',
+            cancelText: '取消',
+        });
     }
 }
 

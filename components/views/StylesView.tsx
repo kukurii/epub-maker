@@ -257,7 +257,7 @@ const StylesView: React.FC<StylesViewProps> = ({ project, activeChapter, onUpdat
     // Preview Logic
     let previewContent = '';
     const activeStyle = PRESET_STYLES.find(s => s.id === project.activeStyleId);
-    const tocTitle = getTocTitle(project.chapters);
+    const tocTitle = project.customTocTitle?.trim() || getTocTitle(project.chapters);
 
     if (stylePreviewMode === 'chapter') {
         previewContent = activeChapter 

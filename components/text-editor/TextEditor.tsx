@@ -388,6 +388,8 @@ const TextEditor: React.FC<TextEditorProps> = ({
           setMatchCase={search.setMatchCase}
           wholeWord={search.wholeWord}
           setWholeWord={search.setWholeWord}
+          useRegex={search.useRegex}
+          setUseRegex={search.setUseRegex}
           matchesCount={search.matches.length}
           currentMatchIndex={search.currentMatchIndex}
           onNavigateNext={() => search.navigateMatch('next')}

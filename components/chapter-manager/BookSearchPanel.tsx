@@ -2,6 +2,15 @@ import React, { useMemo, useState } from 'react';
 import { Chapter } from '../../types';
 import { searchChapters } from '../../services/analysis/book';
 
+/** 常用正则预设 */
+const PRESET_PATTERNS = [
+  { label: '第X章', pattern: '第.{1,4}章' },
+  { label: '第X节', pattern: '第.{1,4}节' },
+  { label: '第X卷', pattern: '第.{1,4}卷' },
+  { label: '连续星号', pattern: '\\*{2,}' },
+  { label: '方括号占位', pattern: '【[^】]+】' },
+];
+
 interface BookSearchPanelProps {
   chapters: Chapter[];
   /** 点击搜索结果，跳转到对应章节和文本 */
@@ -14,10 +23,12 @@ interface BookSearchPanelProps {
  */
 const BookSearchPanel: React.FC<BookSearchPanelProps> = ({ chapters, onFocusSearchText }) => {
   const [searchTerm, setSearchTerm] = useState('');
+  const [matchCase, setMatchCase] = useState(false);
+  const [useRegex, setUseRegex] = useState(false);
 
   const results = useMemo(
-    () => searchChapters(chapters, searchTerm),
-    [chapters, searchTerm],
+    () => searchChapters(chapters, searchTerm, matchCase, useRegex),
+    [chapters, searchTerm, matchCase, useRegex],
   );
 
   return (
@@ -27,14 +38,60 @@ const BookSearchPanel: React.FC<BookSearchPanelProps> = ({ chapters, onFocusSear
         <span className="text-[10px] text-blue-500">{results.length} 个命中章节</span>
       </div>
 
-      <input
-        type="text"
-        value={searchTerm}
-        onChange={(e) => setSearchTerm(e.target.value)}
-        placeholder="输入关键词，跨章节搜索正文"
-        className="w-full rounded-xl border border-blue-200 bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-400"
-        autoFocus
-      />
+      {/* 搜索输入框 */}
+      <div className="flex items-center gap-2">
+        <input
+          type="text"
+          value={searchTerm}
+          onChange={(e) => setSearchTerm(e.target.value)}
+          placeholder={useRegex ? '输入正则表达式...' : '输入关键词，跨章节搜索正文'}
+          className="flex-1 rounded-xl border border-blue-200 bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-400"
+          autoFocus
+        />
+        {/* 区分大小写 */}
+        <button
+          onClick={() => setMatchCase(!matchCase)}
+          className={`flex-shrink-0 rounded-lg px-2 py-2 text-xs font-medium transition-colors ${
+            matchCase
+              ? 'bg-blue-500 text-white'
+              : 'bg-blue-100 text-blue-600 hover:bg-blue-200'
+          }`}
+          title={matchCase ? '区分大小写：开' : '区分大小写：关'}
+        >
+          Aa
+        </button>
+        {/* 正则模式 */}
+        <button
+          onClick={() => setUseRegex(!useRegex)}
+          className={`flex-shrink-0 rounded-lg px-2 py-2 text-[10px] font-bold transition-colors ${
+            useRegex
+              ? 'bg-blue-500 text-white'
+              : 'bg-blue-100 text-blue-600 hover:bg-blue-200'
+          }`}
+          title={useRegex ? '关闭正则' : '开启正则'}
+        >
+          .*
+        </button>
+      </div>
+
+      {/* 正则预设（仅在正则模式下显示） */}
+      {useRegex && (
+        <div className="flex flex-wrap gap-1">
+          {PRESET_PATTERNS.map((preset, idx) => (
+            <button
+              key={idx}
+              onClick={() => setSearchTerm(preset.pattern)}
+              className={`rounded-full px-2 py-0.5 text-[10px] font-medium transition-colors ${
+                searchTerm === preset.pattern
+                  ? 'bg-blue-500 text-white'
+                  : 'bg-blue-100 text-blue-600 hover:bg-blue-200'
+              }`}
+            >
+              {preset.label}
+            </button>
+          ))}
+        </div>
+      )}
 
       {searchTerm.trim() && (
         <div className="max-h-52 overflow-y-auto space-y-2">

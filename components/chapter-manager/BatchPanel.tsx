@@ -1,32 +1,36 @@
 import React from 'react';
 import { Chapter } from '../../types';
-import { ListChecks } from 'lucide-react';
+import {
+  BookOpenCheck,
+  Combine,
+  Eraser,
+  Layers,
+  ListChecks,
+  ListTree,
+  Trash2,
+} from 'lucide-react';
 import { dialog } from '../../services/dialog';
 
 interface BatchPanelProps {
   chapters: Chapter[];
-  /** 当前选中的章节 ID 集合 */
   selectedIds: Set<string>;
-  /** 当前筛选后显示的章节 ID 列表 */
   filteredIds: string[];
-  /** 当前选中的章节 ID（用于判断删除后是否需要切换） */
   currentChapterId: string | null;
-  /** 切换全选/取消 */
   onToggleSelectAll: () => void;
-  /** 清空选择 */
   onClearSelection: () => void;
-  /** 更新章节列表 */
   onUpdateChapters: (chapters: Chapter[]) => void;
-  /** 切换选中的章节 */
   onSelectChapter: (id: string) => void;
-  /** 更新选中集合 */
   onSetSelectedIds: (ids: Set<string>) => void;
 }
 
-/**
- * 批量操作面板
- * 提供全选、批量重命名、批量删除、设层级、加入/排除目录等功能
- */
+const joinChapterContent = (selectedChapters: Chapter[]) =>
+  selectedChapters
+    .map((chapter, index) => {
+      const divider = index === 0 ? '' : '\n<hr class="merge-divider"/>\n';
+      return `${divider}${chapter.content || ''}`;
+    })
+    .join('');
+
 const BatchPanel: React.FC<BatchPanelProps> = ({
   chapters,
   selectedIds,
@@ -39,119 +43,208 @@ const BatchPanel: React.FC<BatchPanelProps> = ({
   onSetSelectedIds,
 }) => {
   const selectedCount = selectedIds.size;
+  const selectedChapters = chapters.filter((chapter) => selectedIds.has(chapter.id));
+  const selectedRange =
+    selectedChapters.length > 0
+      ? `${chapters.findIndex((chapter) => chapter.id === selectedChapters[0].id) + 1} - ${
+          chapters.findIndex((chapter) => chapter.id === selectedChapters[selectedChapters.length - 1].id) + 1
+        }`
+      : '无';
 
-  // 检查当前筛选的章节是否全部选中
   const allFilteredSelected =
     filteredIds.length > 0 && filteredIds.every((id) => selectedIds.has(id));
 
-  /** 对选中章节应用一个更新函数 */
   const applyBatchUpdate = (updater: (chapter: Chapter) => Chapter) => {
     if (selectedIds.size === 0) return;
-    const updated = chapters.map((ch) => (selectedIds.has(ch.id) ? updater(ch) : ch));
-    onUpdateChapters(updated);
+    onUpdateChapters(chapters.map((chapter) => (selectedIds.has(chapter.id) ? updater(chapter) : chapter)));
   };
 
-  /** 批量重命名 */
   const handleBatchRename = () => {
     if (selectedIds.size === 0) return;
 
     const template = window.prompt(
-      '批量重命名模板，支持 {n} 和 {title}，例如：第{n}章 {title}',
-      '第{n}章',
+      '批量重命名模板，支持 {n} 和 {title}。例如：第{n}章 {title}',
+      '第{n}章 {title}',
     );
     if (!template) return;
 
     let counter = 1;
-    const updated = chapters.map((ch) => {
-      if (!selectedIds.has(ch.id)) return ch;
+    const updated = chapters.map((chapter) => {
+      if (!selectedIds.has(chapter.id)) return chapter;
       const title = template
         .replace(/\{n\}/g, String(counter++))
-        .replace(/\{title\}/g, ch.title);
-      return { ...ch, title };
+        .replace(/\{title\}/g, chapter.title);
+      return { ...chapter, title };
     });
+
     onUpdateChapters(updated);
   };
 
-  /** 批量删除 */
+  const handleMergeSelected = async () => {
+    if (selectedIds.size < 2) {
+      await dialog.alert('请至少选择 2 个章节再合并。', '无法合并');
+      return;
+    }
+
+    const orderedSelection = chapters.filter((chapter) => selectedIds.has(chapter.id));
+    const firstChapter = orderedSelection[0];
+    const defaultTitle =
+      orderedSelection.length === 2
+        ? `${firstChapter.title || '合并章节'} + ${orderedSelection[1].title || '下一章'}`
+        : `${firstChapter.title || '合并章节'} 等 ${orderedSelection.length} 章`;
+
+    const mergedTitle = window.prompt('合并后的章节标题', defaultTitle);
+    if (mergedTitle === null) return;
+
+    const mergedChapter: Chapter = {
+      ...firstChapter,
+      title: mergedTitle.trim() || defaultTitle,
+      content: joinChapterContent(orderedSelection),
+      level: firstChapter.level,
+      excludeFromToc: orderedSelection.every((chapter) => chapter.excludeFromToc),
+      subItems: orderedSelection.flatMap((chapter) => chapter.subItems || []),
+    };
+
+    let mergedInserted = false;
+    const updated = chapters.reduce<Chapter[]>((next, chapter) => {
+      if (!selectedIds.has(chapter.id)) {
+        next.push(chapter);
+        return next;
+      }
+
+      if (!mergedInserted) {
+        next.push(mergedChapter);
+        mergedInserted = true;
+      }
+
+      return next;
+    }, []);
+
+    onUpdateChapters(updated);
+    onSetSelectedIds(new Set([mergedChapter.id]));
+    onSelectChapter(mergedChapter.id);
+  };
+
   const handleBatchDelete = async () => {
     if (selectedIds.size === 0) return;
-    if (!(await dialog.confirm(`确定要删除已选中的 ${selectedIds.size} 个章节吗？`))) return;
+    if (!(await dialog.confirm(`确定删除已选中的 ${selectedIds.size} 个章节吗？`, '批量删除'))) return;
 
-    const updated = chapters.filter((ch) => !selectedIds.has(ch.id));
+    const updated = chapters.filter((chapter) => !selectedIds.has(chapter.id));
     onUpdateChapters(updated);
     onSetSelectedIds(new Set());
 
-    // 如果当前选中的章节被删除了，切换到第一个
-    if (currentChapterId && selectedIds.has(currentChapterId)) {
-      onSelectChapter(updated[0]?.id || '');
+    if (currentChapterId && selectedIds.has(currentChapterId) && updated.length > 0) {
+      onSelectChapter(updated[0].id);
     }
   };
 
   return (
-    <div className="mt-3 rounded-2xl border border-indigo-100 bg-indigo-50/60 p-3 space-y-3">
-      <div className="flex items-center justify-between">
-        <div className="text-xs font-bold uppercase tracking-wider text-indigo-600">批量操作</div>
-        <span className="text-[10px] text-indigo-500">{selectedCount} 已选</span>
-      </div>
-
-      {/* 选择控制 */}
-      <div className="flex gap-2">
-        <button
-          onClick={onToggleSelectAll}
-          className="flex-1 rounded-xl bg-white border border-indigo-200 px-3 py-2 text-xs font-semibold text-indigo-700 hover:bg-indigo-50 transition-colors"
-        >
-          {allFilteredSelected ? '取消当前筛选全选' : '全选当前筛选'}
-        </button>
+    <div className="mt-3 rounded-2xl border border-indigo-100 bg-indigo-50/60 p-3 shadow-sm shadow-indigo-100/40">
+      <div className="flex items-center justify-between gap-3">
+        <div className="min-w-0">
+          <div className="flex items-center gap-2 text-xs font-bold text-indigo-700">
+            <ListChecks size={14} />
+            批量操作
+          </div>
+          <div className="mt-1 text-[11px] text-indigo-500">
+            已选 {selectedCount} 个，范围 {selectedRange}
+          </div>
+        </div>
         <button
           onClick={onClearSelection}
-          className="rounded-xl bg-white border border-indigo-200 px-3 py-2 text-xs font-semibold text-gray-600 hover:bg-gray-50 transition-colors"
+          disabled={selectedCount === 0}
+          className="inline-flex h-8 w-8 items-center justify-center rounded-xl bg-white text-slate-500 shadow-sm transition-colors hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
+          title="清空选择"
         >
-          清空
+          <Eraser size={14} />
         </button>
       </div>
 
-      {/* 批量操作按钮 */}
-      <div className="grid grid-cols-2 gap-2">
-        <BatchButton
-          label="加入目录"
-          onClick={() => applyBatchUpdate((ch) => ({ ...ch, excludeFromToc: false }))}
-        />
-        <BatchButton
-          label="排除目录"
-          onClick={() => applyBatchUpdate((ch) => ({ ...ch, excludeFromToc: true }))}
-        />
-        <BatchButton
-          label="设为一级"
-          onClick={() => applyBatchUpdate((ch) => ({ ...ch, level: 1 }))}
-        />
-        <BatchButton
-          label="设为二级"
-          onClick={() => applyBatchUpdate((ch) => ({ ...ch, level: 2 }))}
-        />
-        <BatchButton label="批量重命名" onClick={handleBatchRename} />
+      <div className="mt-3 grid grid-cols-2 gap-2">
         <button
-          onClick={handleBatchDelete}
-          className="rounded-xl bg-red-500 px-3 py-2 text-xs font-semibold text-white hover:bg-red-600 transition-colors"
+          onClick={onToggleSelectAll}
+          className="inline-flex items-center justify-center gap-1.5 rounded-xl border border-indigo-200 bg-white px-3 py-2 text-xs font-semibold text-indigo-700 transition-colors hover:bg-indigo-50"
         >
-          批量删除
+          <ListTree size={14} />
+          {allFilteredSelected ? '取消全选' : '选择全部'}
         </button>
+        <BatchButton
+          icon={<Combine size={14} />}
+          label="合并所选"
+          disabled={selectedCount < 2}
+          onClick={handleMergeSelected}
+          strong
+        />
       </div>
 
-      <div className="text-[10px] text-gray-500 flex items-center">
-        <ListChecks size={12} className="mr-1.5 text-indigo-500" />
-        打开后可在章节列表左侧勾选需要批量处理的章节。
+      <div className="mt-2 grid grid-cols-2 gap-2">
+        <BatchButton
+          icon={<BookOpenCheck size={14} />}
+          label="加入目录"
+          disabled={selectedCount === 0}
+          onClick={() => applyBatchUpdate((chapter) => ({ ...chapter, excludeFromToc: false }))}
+        />
+        <BatchButton
+          icon={<BookOpenCheck size={14} />}
+          label="排除目录"
+          disabled={selectedCount === 0}
+          onClick={() => applyBatchUpdate((chapter) => ({ ...chapter, excludeFromToc: true }))}
+        />
+        <BatchButton
+          icon={<Layers size={14} />}
+          label="设为一级"
+          disabled={selectedCount === 0}
+          onClick={() => applyBatchUpdate((chapter) => ({ ...chapter, level: 1 }))}
+        />
+        <BatchButton
+          icon={<Layers size={14} />}
+          label="设为二级"
+          disabled={selectedCount === 0}
+          onClick={() => applyBatchUpdate((chapter) => ({ ...chapter, level: 2 }))}
+        />
+        <BatchButton
+          icon={<ListChecks size={14} />}
+          label="批量重命名"
+          disabled={selectedCount === 0}
+          onClick={handleBatchRename}
+        />
+        <BatchButton
+          icon={<Trash2 size={14} />}
+          label="批量删除"
+          disabled={selectedCount === 0}
+          onClick={handleBatchDelete}
+          danger
+        />
+      </div>
+
+      <div className="mt-3 rounded-xl bg-white/70 px-3 py-2 text-[11px] leading-5 text-slate-500">
+        合并会按当前目录顺序执行，并保留第一个所选章节的位置、ID、层级和目录状态。
       </div>
     </div>
   );
 };
 
-/** 批量操作按钮通用样式 */
-const BatchButton: React.FC<{ label: string; onClick: () => void }> = ({ label, onClick }) => (
+const BatchButton: React.FC<{
+  icon: React.ReactNode;
+  label: string;
+  onClick: () => void;
+  disabled?: boolean;
+  danger?: boolean;
+  strong?: boolean;
+}> = ({ icon, label, onClick, disabled = false, danger = false, strong = false }) => (
   <button
     onClick={onClick}
-    className="rounded-xl bg-white border border-indigo-200 px-3 py-2 text-xs font-semibold text-gray-700 hover:bg-indigo-50 transition-colors"
+    disabled={disabled}
+    className={`inline-flex items-center justify-center gap-1.5 rounded-xl px-3 py-2 text-xs font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-40 ${
+      danger
+        ? 'bg-red-500 text-white hover:bg-red-600'
+        : strong
+          ? 'bg-indigo-600 text-white shadow-sm shadow-indigo-500/20 hover:bg-indigo-700'
+          : 'border border-indigo-100 bg-white text-slate-700 hover:bg-indigo-50'
+    }`}
   >
-    {label}
+    {icon}
+    <span className="truncate">{label}</span>
   </button>
 );
 

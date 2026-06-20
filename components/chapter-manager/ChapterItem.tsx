@@ -1,45 +1,33 @@
 import React from 'react';
 import { Chapter } from '../../types';
 import {
-  ChevronUp,
-  ChevronDown,
-  Trash2,
   ArrowDownToLine,
-  Settings,
   CheckSquare,
+  ChevronDown,
+  ChevronUp,
+  Eye,
+  EyeOff,
+  Settings,
   Square,
+  Trash2,
 } from 'lucide-react';
 import SubItemTree from './SubItemTree';
 import { DragHandle } from '../../hooks/useDragSort';
 
 interface ChapterItemProps {
-  /** 章节数据（附带 originalIndex） */
   chapter: Chapter & { originalIndex: number };
-  /** 当前选中的章节 ID */
   currentChapterId: string | null;
-  /** 章节总数（用于判断边界按钮是否可用） */
   totalChapters: number;
-  /** 选中章节 */
   onSelect: (id: string) => void;
-  /** 点击子项跳转锚点 */
   onScrollToAnchor: (chapterId: string, anchorId: string) => void;
-  /** 切换 TOC 包含/排除 */
   onToggleToc: (index: number) => void;
-  /** 合并下一章 */
   onMergeNext: (index: number) => void;
-  /** 打开编辑弹窗 */
   onEdit: (e: React.MouseEvent, chapter: Chapter) => void;
-  /** 上移/下移 */
   onMove: (index: number, direction: 'up' | 'down') => void;
-  /** 删除 */
   onDelete: (index: number) => void;
-  /** 是否处于批量选择模式 */
   selectionMode?: boolean;
-  /** 当前章节是否被批量选中 */
   batchSelected?: boolean;
-  /** 切换批量选择 */
   onToggleBatchSelect?: (chapterId: string) => void;
-  /** 拖拽事件 */
   onDragStart?: (e: React.DragEvent) => void;
   onDragEnd?: (e: React.DragEvent) => void;
   onDragOver?: (e: React.DragEvent) => void;
@@ -49,10 +37,6 @@ interface ChapterItemProps {
   isDropTarget?: boolean;
 }
 
-/**
- * 单个章节项组件
- * 展示章节标题、操作按钮、子项树
- */
 const ChapterItem: React.FC<ChapterItemProps> = ({
   chapter,
   currentChapterId,
@@ -79,138 +63,157 @@ const ChapterItem: React.FC<ChapterItemProps> = ({
   const isIncludedInToc = !chapter.excludeFromToc;
   const idx = chapter.originalIndex;
 
+  const handleRowClick = () => {
+    if (selectionMode) {
+      onToggleBatchSelect?.(chapter.id);
+      return;
+    }
+    onSelect(chapter.id);
+  };
+
   return (
     <div className="mb-1.5">
-      {/* 章节主行 */}
       <div
         draggable={!selectionMode}
+        onClick={handleRowClick}
+        onDoubleClick={(event) => onEdit(event, chapter)}
         onDragStart={onDragStart}
         onDragEnd={onDragEnd}
         onDragOver={onDragOver}
         onDragLeave={onDragLeave}
         onDrop={onDrop}
-        className={`
-          group flex items-center p-2.5 rounded-xl cursor-default
-          transition-all duration-200
-          ${isActive
+        className={`group relative rounded-2xl px-3 py-3 transition-all duration-200 ${
+          isActive
             ? 'bg-blue-500 text-white shadow-md shadow-blue-200'
-            : 'hover:bg-gray-100/80 text-gray-800'
-          }
-          ${isDragging ? 'opacity-50' : ''}
-          ${isDropTarget ? 'border-2 border-blue-400 border-dashed' : ''}
-        `}
+            : 'text-slate-800 hover:bg-slate-100/80'
+        } ${batchSelected ? 'ring-2 ring-indigo-300' : ''} ${isDragging ? 'opacity-50' : ''} ${
+          isDropTarget ? 'outline outline-2 outline-blue-300 outline-dashed' : ''
+        }`}
       >
-        {/* 拖拽手柄 */}
-        {!selectionMode && (
-          <DragHandle className="mr-2 flex-shrink-0" />
-        )}
-        {/* 批量选择复选框 */}
-        {selectionMode && (
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              onToggleBatchSelect?.(chapter.id);
-            }}
-            className={`mr-1 flex h-6 w-6 items-center justify-center rounded transition-colors ${
-              isActive ? 'hover:bg-white/20' : 'hover:bg-gray-200'
-            }`}
-            title="选择章节"
-          >
-            {batchSelected ? <CheckSquare size={16} /> : <Square size={16} />}
-          </button>
-        )}
-
-        {/* TOC 包含/排除 指示器 */}
-        <div
-          className={`flex items-center justify-center w-6 h-6 mr-2 cursor-pointer rounded
-            hover:bg-black/10 transition-colors ${isActive ? 'hover:bg-white/20' : ''}`}
-          onClick={(e) => {
-            e.stopPropagation();
-            onToggleToc(idx);
-          }}
-          title={isIncludedInToc ? '已包含在目录中（点击排除）' : '已排除出目录（点击包含）'}
-        >
-          <div
-            className={`w-3.5 h-3.5 rounded-[3px] border flex items-center justify-center transition-all duration-200
-              ${isIncludedInToc
-                ? 'bg-green-500 border-green-500 shadow-sm'
-                : `border-gray-300 bg-white ${isActive ? 'border-white/50' : ''}`
+        <div className="flex min-w-0 items-start gap-2 pr-2">
+          {selectionMode ? (
+            <button
+              onClick={(event) => {
+                event.stopPropagation();
+                onToggleBatchSelect?.(chapter.id);
+              }}
+              className={`mt-0.5 inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-xl transition-colors ${
+                isActive ? 'hover:bg-white/20' : 'text-indigo-600 hover:bg-indigo-50'
               }`}
+              title={batchSelected ? '取消选择' : '选择章节'}
+            >
+              {batchSelected ? <CheckSquare size={17} /> : <Square size={17} />}
+            </button>
+          ) : (
+            <DragHandle className="mt-1 shrink-0" />
+          )}
+
+          <button
+            onClick={(event) => {
+              event.stopPropagation();
+              onToggleToc(idx);
+            }}
+            className={`mt-0.5 inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-xl transition-colors ${
+              isActive
+                ? 'bg-white/15 text-white hover:bg-white/25'
+                : isIncludedInToc
+                  ? 'bg-emerald-50 text-emerald-600 hover:bg-emerald-100'
+                  : 'bg-slate-100 text-slate-400 hover:bg-slate-200'
+            }`}
+            title={isIncludedInToc ? '已加入目录，点击排除' : '已排除目录，点击加入'}
           >
-            {isIncludedInToc && <div className="w-1.5 h-1.5 bg-white rounded-full shadow-sm" />}
+            {isIncludedInToc ? <Eye size={15} /> : <EyeOff size={15} />}
+          </button>
+
+          <div className="min-w-0 flex-1">
+            <div className="flex min-w-0 items-center gap-2">
+              <span
+                className={`shrink-0 rounded-lg px-2 py-1 text-[11px] font-bold ${
+                  isActive
+                    ? 'bg-white/20 text-white'
+                    : chapter.level === 1
+                      ? 'bg-slate-900 text-white'
+                      : 'bg-slate-100 text-slate-600'
+                }`}
+              >
+                {chapter.level === 1 ? '一级' : '二级'}
+              </span>
+              <div
+                className={`min-w-0 flex-1 truncate text-sm font-bold leading-6 ${
+                  isActive ? 'text-white' : 'text-slate-900'
+                }`}
+                title={chapter.title}
+              >
+                {chapter.title || '无标题章节'}
+              </div>
+            </div>
+
+            <div
+              className={`mt-1 flex min-w-0 items-center gap-2 whitespace-nowrap text-[11px] ${
+                isActive ? 'text-blue-100' : 'text-slate-500'
+              }`}
+            >
+              <span>#{idx + 1}</span>
+              <span>{chapter.subItems?.length || 0} 个小标题</span>
+              {!isIncludedInToc && <span className="truncate">不导出到目录</span>}
+            </div>
           </div>
         </div>
 
-        {/* 标题（点击选中，双击编辑） */}
-        <div
-          className="flex-1 min-w-0 font-semibold text-sm truncate pr-2 select-none cursor-pointer"
-          title={chapter.title}
-          onClick={() => onSelect(chapter.id)}
-          onDoubleClick={(e) => onEdit(e, chapter)}
-        >
-          {chapter.title || '无标题章节'}
-        </div>
-
-        {/* 操作按钮组 */}
-        <div
-          className={`flex-shrink-0 flex items-center space-x-0.5 transition-opacity
-            ${isActive ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}
-        >
-          {/* 合并下一章 */}
+        <div className="absolute right-2 top-2 flex items-center gap-0.5 rounded-xl bg-white/95 p-1 opacity-0 shadow-lg shadow-slate-900/10 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">
           {idx < totalChapters - 1 && (
             <ActionButton
-              icon={<ArrowDownToLine size={13} />}
-              title="向下合并"
-              isActive={isActive}
-              onClick={(e) => { e.stopPropagation(); onMergeNext(idx); }}
+              icon={<ArrowDownToLine size={14} />}
+              title="与下一章合并"
+              onClick={(event) => {
+                event.stopPropagation();
+                onMergeNext(idx);
+              }}
             />
           )}
-
-          {/* 编辑设置 */}
           <ActionButton
-            icon={<Settings size={13} />}
-            title="设置 (ID/标题)"
-            isActive={isActive}
-            onClick={(e) => onEdit(e, chapter)}
+            icon={<Settings size={14} />}
+            title="编辑标题和 ID"
+            onClick={(event) => {
+              event.stopPropagation();
+              onEdit(event, chapter);
+            }}
           />
-
-          {/* 上移 */}
           <ActionButton
-            icon={<ChevronUp size={13} />}
+            icon={<ChevronUp size={14} />}
             title="上移"
-            isActive={isActive}
             disabled={idx === 0}
-            onClick={(e) => { e.stopPropagation(); onMove(idx, 'up'); }}
+            onClick={(event) => {
+              event.stopPropagation();
+              onMove(idx, 'up');
+            }}
           />
-
-          {/* 下移 */}
           <ActionButton
-            icon={<ChevronDown size={13} />}
+            icon={<ChevronDown size={14} />}
             title="下移"
-            isActive={isActive}
             disabled={idx === totalChapters - 1}
-            onClick={(e) => { e.stopPropagation(); onMove(idx, 'down'); }}
+            onClick={(event) => {
+              event.stopPropagation();
+              onMove(idx, 'down');
+            }}
           />
-
-          {/* 删除 */}
           <button
-            onMouseDown={(e) => e.preventDefault()}
-            onClick={(e) => { e.stopPropagation(); onDelete(idx); }}
-            className={`p-1.5 rounded ${
-              isActive ? 'hover:bg-blue-600 text-blue-100' : 'hover:bg-red-100 text-red-500'
-            }`}
-            title="删除"
+            onMouseDown={(event) => event.preventDefault()}
+            onClick={(event) => {
+              event.stopPropagation();
+              onDelete(idx);
+            }}
+            className="inline-flex h-7 w-7 items-center justify-center rounded-lg text-red-500 transition-colors hover:bg-red-50"
+            title="删除章节"
           >
-            <Trash2 size={13} />
+            <Trash2 size={14} />
           </button>
         </div>
       </div>
 
-      {/* 子项树 */}
       <SubItemTree
         items={chapter.subItems || []}
         onClickItem={(anchorId) => {
-          // 先选中章节，等一帧再跳转锚点
           onSelect(chapter.id);
           setTimeout(() => onScrollToAnchor(chapter.id, anchorId), 50);
         }}
@@ -219,25 +222,17 @@ const ChapterItem: React.FC<ChapterItemProps> = ({
   );
 };
 
-/** 通用操作小按钮 */
 const ActionButton: React.FC<{
   icon: React.ReactNode;
   title: string;
-  isActive: boolean;
   disabled?: boolean;
-  onClick: (e: React.MouseEvent) => void;
-}> = ({ icon, title, isActive, disabled, onClick }) => (
+  onClick: (event: React.MouseEvent) => void;
+}> = ({ icon, title, disabled = false, onClick }) => (
   <button
-    onMouseDown={(e) => e.preventDefault()}
+    onMouseDown={(event) => event.preventDefault()}
     onClick={onClick}
     disabled={disabled}
-    className={`p-1.5 rounded transition-all ${
-      disabled
-        ? 'opacity-30 cursor-not-allowed'
-        : isActive
-          ? 'hover:bg-blue-600 text-blue-100'
-          : 'hover:bg-gray-200 text-gray-500'
-    }`}
+    className="inline-flex h-7 w-7 items-center justify-center rounded-lg text-slate-500 transition-colors hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-30"
     title={title}
   >
     {icon}

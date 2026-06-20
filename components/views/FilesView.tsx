@@ -15,6 +15,14 @@ interface FilesViewProps {
 
 type DragZoneType = 'txt' | 'epub' | 'html' | 'batch' | null;
 
+const escapeHtml = (value: string) =>
+    value
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+
 const FilesView: React.FC<FilesViewProps> = ({ onProjectUpdate, onChaptersLoaded, onLoadingStart, onLoadingEnd }) => {
     const [splitRegex, setSplitRegex] = useState<string>("^\\s*(Chapter\\s+\\d+|第[0-9一二三四五六七八九十百千]+[章回节]|序章|尾声|引子|[（(][0-9一二三四五六七八九十百千]+[)）])");
     const [cleanHtml, setCleanHtml] = useState(true);
@@ -60,7 +68,9 @@ const FilesView: React.FC<FilesViewProps> = ({ onProjectUpdate, onChaptersLoaded
                     chapters: newChapters,
                     images: [],
                     cover: null,
-                    customCSS: ''
+                    customCSS: '',
+                    customTocTitle: undefined,
+                    customTocXhtml: undefined
                 });
 
                 if (newChapters.length > 0) {
@@ -91,7 +101,7 @@ const FilesView: React.FC<FilesViewProps> = ({ onProjectUpdate, onChaptersLoaded
                 cleanHtml,
                 removeImages
             });
-            onProjectUpdate(importedProject);
+            onProjectUpdate({ ...importedProject, customTocTitle: undefined, customTocXhtml: undefined });
 
             if (importedProject.chapters && importedProject.chapters.length > 0) {
                 onChaptersLoaded(importedProject.chapters, importedProject.chapters[0].id);
@@ -130,7 +140,9 @@ const FilesView: React.FC<FilesViewProps> = ({ onProjectUpdate, onChaptersLoaded
                     chapters: parsedChapters,
                     images: [],
                     cover: null,
-                    customCSS: ''
+                    customCSS: '',
+                    customTocTitle: undefined,
+                    customTocXhtml: undefined
                 });
 
                 if (parsedChapters.length > 0) {
@@ -195,6 +207,7 @@ const FilesView: React.FC<FilesViewProps> = ({ onProjectUpdate, onChaptersLoaded
             let primaryMetadata: Metadata | null = null;
             let primaryCover: string | null = null;
             let globalImageCount = 0;
+            const shouldGroupBooks = fileList.length > 1;
 
             for (let i = 0; i < fileList.length; i++) {
                 onLoadingStart(`正在合并第 ${i + 1}/${fileList.length} 本书: ${fileList[i].name}`);
@@ -208,7 +221,29 @@ const FilesView: React.FC<FilesViewProps> = ({ onProjectUpdate, onChaptersLoaded
                     removeImages
                 });
 
-                if (result.chapters) mergedChapters = [...mergedChapters, ...result.chapters];
+                const bookTitle = result.metadata?.title?.trim() || file.name.replace(/\.epub$/i, '');
+                const bookSectionId = `${Date.now().toString(36)}_${i}_section`;
+                const bookChapters = (result.chapters || []).map((chapter) => ({
+                    ...chapter,
+                    level: 2 as const,
+                    excludeFromToc: chapter.excludeFromToc,
+                }));
+
+                if (bookChapters.length > 0 && shouldGroupBooks) {
+                    mergedChapters = [
+                        ...mergedChapters,
+                        {
+                            id: bookSectionId,
+                            title: bookTitle,
+                            content: `<h1>${escapeHtml(bookTitle)}</h1>`,
+                            level: 1,
+                            subItems: [],
+                        },
+                        ...bookChapters,
+                    ];
+                } else if (bookChapters.length > 0) {
+                    mergedChapters = [...mergedChapters, ...bookChapters];
+                }
                 if (result.images) {
                     mergedImages = [...mergedImages, ...result.images];
                     globalImageCount += result.images.length;
@@ -237,7 +272,9 @@ const FilesView: React.FC<FilesViewProps> = ({ onProjectUpdate, onChaptersLoaded
                 images: mergedImages,
                 extraFiles: mergedExtraFiles,
                 cover: primaryCover,
-                customCSS: mergedCustomCSS
+                customCSS: mergedCustomCSS,
+                customTocTitle: shouldGroupBooks ? '目录' : undefined,
+                customTocXhtml: undefined
             });
 
             if (mergedChapters.length > 0) {

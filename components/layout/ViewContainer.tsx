@@ -85,7 +85,9 @@ const ChaptersView: React.FC<{
           onSelectChapter={onSelectChapter}
           onScrollToAnchor={onScrollToAnchor}
           onFocusSearchText={onFocusSearchText}
-          onUpdateChapters={onUpdateChapters}
+          onUpdateChapters={(chapters) => onUpdateProject({ chapters, customTocXhtml: undefined })}
+          customTocTitle={project.customTocTitle}
+          onUpdateTocTitle={(customTocTitle) => onUpdateProject({ customTocTitle, customTocXhtml: undefined })}
           className="w-full"
         />
       </div>

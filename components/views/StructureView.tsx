@@ -6,6 +6,7 @@ import FileTree from '../structure/FileTree';
 import { dialog } from '../../services/dialog';
 import FileContentArea from '../structure/FileContentArea';
 import { PRESET_STYLES } from '../../themes';
+import { renderTocXhtml } from '../../services/toc';
 
 interface StructureViewProps {
     project: ProjectData;
@@ -71,6 +72,11 @@ const StructureView: React.FC<StructureViewProps> = ({ project, onUpdateProject 
             : `/* 预设主题已停用 */`;
         return `${prefix}\n\n${CUSTOM_CSS_MARKER}\n${project.customCSS}`;
     }, [project.activeStyleId, project.customCSS, project.isPresetStyleActive]);
+
+    const generatedTocXhtml = useMemo(
+        () => project.customTocXhtml || renderTocXhtml(project.chapters || [], project.customTocTitle),
+        [project.chapters, project.customTocTitle, project.customTocXhtml],
+    );
 
     // Compute structure
     const { structure, totalSize } = useMemo(() => {
@@ -147,9 +153,9 @@ const StructureView: React.FC<StructureViewProps> = ({ project, onUpdateProject 
             total += coverHtmlSize;
             chapters.unshift({ id: 'cover-html', name: 'cover.xhtml', type: 'file', fileType: 'xhtml', sizeBytes: coverHtmlSize, isEditable: false });
         }
-        const tocHtmlSize = 1000;
+        const tocHtmlSize = getByteSize(generatedTocXhtml);
         total += tocHtmlSize;
-        chapters.unshift({ id: 'toc-html', name: 'toc.xhtml', type: 'file', fileType: 'xhtml', sizeBytes: tocHtmlSize, isEditable: false });
+        chapters.unshift({ id: 'toc-html', name: 'toc.xhtml', type: 'file', fileType: 'xhtml', sizeBytes: tocHtmlSize, isEditable: true });
 
         const opfSize = 2000;
         const ncxSize = 1000;
@@ -197,7 +203,7 @@ const StructureView: React.FC<StructureViewProps> = ({ project, onUpdateProject 
         };
 
         return { structure: root, totalSize: total };
-    }, [project, mergedMainCss]);
+    }, [project, mergedMainCss, generatedTocXhtml]);
 
     // Find node helper
     const findNode = useCallback((id: string, nodes: FileNode[]): FileNode | null => {
@@ -238,6 +244,8 @@ const StructureView: React.FC<StructureViewProps> = ({ project, onUpdateProject 
             } else {
                 onUpdateProject({ customCSS: content });
             }
+        } else if (id === 'toc-html') {
+            onUpdateProject({ customTocXhtml: content });
         } else if (id.startsWith('chapter-')) {
             const chapterIndex = parseInt(id.split('-')[1]);
             const newChapters = [...project.chapters];
@@ -288,6 +296,10 @@ const StructureView: React.FC<StructureViewProps> = ({ project, onUpdateProject 
                 content = mergedMainCss;
                 editable = true;
                 found = true;
+            } else if (selectedNodeId === 'toc-html') {
+                content = generatedTocXhtml;
+                editable = true;
+                found = true;
             } else if (selectedNodeId.startsWith('chapter-')) {
                 const chapterIndex = parseInt(selectedNodeId.split('-')[1]);
                 if (project.chapters[chapterIndex]) {
@@ -317,7 +329,7 @@ const StructureView: React.FC<StructureViewProps> = ({ project, onUpdateProject 
         } else {
             setPreviewUrl(null);
         }
-    }, [selectedNodeId, project.chapters, project.extraFiles, project.cover, project.images, mergedMainCss, selectedNode]);
+    }, [selectedNodeId, project.chapters, project.extraFiles, project.cover, project.images, mergedMainCss, generatedTocXhtml, selectedNode]);
 
     const toggleFileActive = () => {
         if (selectedNodeId && selectedNodeId.startsWith('extra-')) {
@@ -418,8 +430,9 @@ const StructureView: React.FC<StructureViewProps> = ({ project, onUpdateProject 
         if (selectedNode.dataUrl) {
             saveAs(selectedNode.dataUrl, selectedNode.name);
         } else {
-            const contentToDownload = isDirty ? editorContent : (
+                const contentToDownload = isDirty ? editorContent : (
                 selectedNodeId === 'style-css' ? mergedMainCss :
+                    selectedNodeId === 'toc-html' ? generatedTocXhtml :
                     selectedNodeId?.startsWith('chapter-') ? project.chapters[parseInt(selectedNodeId.split('-')[1])].content :
                         selectedNodeId?.startsWith('extra-') ? project.extraFiles?.find(f => f.id === selectedNodeId.replace('extra-', ''))?.content : ''
             );

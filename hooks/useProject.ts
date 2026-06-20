@@ -49,7 +49,9 @@ export const getInitialState = (): ProjectData => ({
         activeTemplateIndex: 0,
         showTextOnCover: true,
         aiCoverPrompt: ''
-    }
+    },
+    customTocTitle: undefined,
+    customTocXhtml: undefined
 });
 
 export const useProject = () => {

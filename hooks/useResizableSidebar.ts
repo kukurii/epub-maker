@@ -36,9 +36,9 @@ interface UseResizableSidebarReturn {
   resetWidth: () => void;
 }
 
-const DEFAULT_WIDTH = 320; // 80 * 4 = 320px (w-80)
-const MIN_WIDTH = 240;
-const MAX_WIDTH = 480;
+const DEFAULT_WIDTH = 380;
+const MIN_WIDTH = 360;
+const MAX_WIDTH = 560;
 const STORAGE_KEY = 'epub-maker-sidebar-width';
 const MOBILE_BREAKPOINT = 768;
 

@@ -133,24 +133,54 @@ export const searchChapters = (
   chapters: Chapter[],
   query: string,
   matchCase: boolean = false,
+  useRegex: boolean = false,
 ): ChapterSearchMatch[] => {
-  const normalizedQuery = matchCase ? query.trim() : query.trim().toLowerCase();
+  const normalizedQuery = query.trim();
   if (!normalizedQuery) return [];
 
   return chapters
     .map((chapter) => {
       const text = extractPlainText(chapter.content);
-      const source = matchCase ? text : text.toLowerCase();
-      let index = 0;
       const snippets: string[] = [];
       let occurrences = 0;
 
-      while ((index = source.indexOf(normalizedQuery, index)) > -1) {
-        occurrences += 1;
-        if (snippets.length < 3) {
-          snippets.push(getSnippet(text, index, normalizedQuery.length));
+      if (useRegex) {
+        // 正则模式
+        try {
+          const flags = matchCase ? 'g' : 'gi';
+          const regex = new RegExp(normalizedQuery, flags);
+          let match: RegExpExecArray | null;
+
+          while ((match = regex.exec(text)) !== null) {
+            occurrences += 1;
+            if (snippets.length < 3) {
+              snippets.push(getSnippet(text, match.index, match[0].length));
+            }
+            // 防止空匹配无限循环
+            if (match[0].length === 0) regex.lastIndex++;
+          }
+        } catch {
+          // 正则语法错误时返回空匹配
+          return {
+            chapterId: chapter.id,
+            chapterTitle: chapter.title,
+            occurrences: 0,
+            snippets: [],
+          };
         }
-        index += normalizedQuery.length || 1;
+      } else {
+        // 纯文本模式
+        const source = matchCase ? text : text.toLowerCase();
+        const pattern = matchCase ? normalizedQuery : normalizedQuery.toLowerCase();
+        let index = 0;
+
+        while ((index = source.indexOf(pattern, index)) > -1) {
+          occurrences += 1;
+          if (snippets.length < 3) {
+            snippets.push(getSnippet(text, index, pattern.length));
+          }
+          index += pattern.length || 1;
+        }
       }
 
       return {

@@ -16,6 +16,98 @@ const normalizePath = (path: string) => {
     return result.join('/');
 };
 
+interface ManifestItemInfo {
+    href: string;
+    mediaType: string;
+    zipPath: string;
+    properties?: string;
+}
+
+interface ImportedTocEntry {
+    title: string;
+    level: 1 | 2;
+}
+
+const stripFragment = (href: string) => href.split('#')[0];
+
+const resolveHref = (baseDir: string, href: string) => normalizePath(`${baseDir}/${decodeURIComponent(stripFragment(href))}`);
+
+const readImportedToc = async (
+    zip: JSZip,
+    itemMap: Map<string, ManifestItemInfo>,
+    opfDir: string,
+    parser: DOMParser,
+): Promise<Map<string, ImportedTocEntry>> => {
+    const tocMap = new Map<string, ImportedTocEntry>();
+
+    const addEntry = (baseDir: string, href: string, title: string, level: 1 | 2) => {
+        const cleanTitle = title.trim();
+        if (!href || !cleanTitle) return;
+        const zipPath = resolveHref(baseDir, href);
+        if (!tocMap.has(zipPath)) {
+            tocMap.set(zipPath, { title: cleanTitle, level });
+        }
+    };
+
+    const ncxItem = Array.from(itemMap.values()).find((item) => item.mediaType === 'application/x-dtbncx+xml');
+    if (ncxItem) {
+        const ncxFile = zip.file(ncxItem.zipPath);
+        if (ncxFile) {
+            const ncxDoc = parser.parseFromString(await ncxFile.async('text'), 'application/xml');
+            const ncxDir = ncxItem.zipPath.substring(0, ncxItem.zipPath.lastIndexOf('/')) || opfDir;
+
+            const walkNavPoint = (navPoint: Element, depth: number) => {
+                const label = navPoint.getElementsByTagName('text')[0]?.textContent || '';
+                const src = navPoint.getElementsByTagName('content')[0]?.getAttribute('src') || '';
+                addEntry(ncxDir, src, label, depth <= 1 ? 1 : 2);
+
+                Array.from(navPoint.children)
+                    .filter((child) => child.tagName.toLowerCase() === 'navpoint')
+                    .forEach((child) => walkNavPoint(child, depth + 1));
+            };
+
+            Array.from(ncxDoc.getElementsByTagName('navMap')[0]?.children || [])
+                .filter((child) => child.tagName.toLowerCase() === 'navpoint')
+                .forEach((navPoint) => walkNavPoint(navPoint, 1));
+        }
+    }
+
+    const navItem = Array.from(itemMap.values()).find((item) =>
+        item.properties?.split(/\s+/).includes('nav') ||
+        /(^|\/)(nav|toc)\.x?html?$/i.test(item.href),
+    );
+
+    if (navItem) {
+        const navFile = zip.file(navItem.zipPath);
+        if (navFile) {
+            const navDoc = parser.parseFromString(await navFile.async('text'), 'text/html');
+            const navDir = navItem.zipPath.substring(0, navItem.zipPath.lastIndexOf('/')) || opfDir;
+            const tocNav =
+                navDoc.querySelector('nav[epub\\:type="toc"], nav[type="toc"], nav[role="doc-toc"]') ||
+                navDoc.querySelector('nav');
+
+            const walkList = (list: Element, depth: number) => {
+                Array.from(list.children)
+                    .filter((child) => child.tagName.toLowerCase() === 'li')
+                    .forEach((li) => {
+                        const link = li.querySelector(':scope > a[href], :scope > span');
+                        const href = link?.getAttribute('href') || '';
+                        const text = link?.textContent || '';
+                        addEntry(navDir, href, text, depth <= 1 ? 1 : 2);
+
+                        const childList = li.querySelector(':scope > ol, :scope > ul');
+                        if (childList) walkList(childList, depth + 1);
+                    });
+            };
+
+            const rootList = tocNav?.querySelector('ol, ul');
+            if (rootList) walkList(rootList, 1);
+        }
+    }
+
+    return tocMap;
+};
+
 export const parseEpub = async (file: File, options?: { imageStartId?: number; cleanHtml?: boolean; removeImages?: boolean; }): Promise<Partial<ProjectData>> => {
     const zip = await JSZip.loadAsync(file);
     const parser = new DOMParser();
@@ -48,7 +140,7 @@ export const parseEpub = async (file: File, options?: { imageStartId?: number; c
     };
 
     const manifestItems = opfDoc.getElementsByTagName('item');
-    const itemMap = new Map<string, { href: string; mediaType: string; zipPath: string }>();
+    const itemMap = new Map<string, ManifestItemInfo>();
     const imagePathMap = new Map<string, ImageAsset>();
     const newImages: ImageAsset[] = [];
     const newExtraFiles: ExtraFile[] = [];
@@ -61,9 +153,10 @@ export const parseEpub = async (file: File, options?: { imageStartId?: number; c
         const id = item.getAttribute('id') || 'unknown';
         const href = decodeURIComponent(item.getAttribute('href') || '');
         const mediaType = item.getAttribute('media-type');
+        const properties = item.getAttribute('properties') || undefined;
         if (id && href && mediaType) {
             const zipPath = normalizePath(`${opfDir}/${href}`);
-            itemMap.set(id, { href, mediaType, zipPath });
+            itemMap.set(id, { href, mediaType, zipPath, properties });
 
             if (mediaType.startsWith('image/')) {
                 const imageFile = zip.file(zipPath);
@@ -115,6 +208,8 @@ export const parseEpub = async (file: File, options?: { imageStartId?: number; c
         }
     });
     await Promise.all(manifestPromises);
+
+    const tocMap = await readImportedToc(zip, itemMap, opfDir, parser);
 
     const spineItems = opfDoc.getElementsByTagName('itemref');
 
@@ -229,8 +324,10 @@ export const parseEpub = async (file: File, options?: { imageStartId?: number; c
                 }
 
                 const headings = chapterDoc.querySelectorAll('h1, h2');
+                const tocEntry = tocMap.get(chapterItem.zipPath);
                 let foundTitle = false;
-                let chapterTitle = `Chapter ${chapterIndex + 1}`;
+                let chapterTitle = tocEntry?.title || `Chapter ${chapterIndex + 1}`;
+                let chapterLevel: 1 | 2 = tocEntry?.level || 1;
                 const subItems: TocItem[] = [];
 
                 headings.forEach(el => {
@@ -238,11 +335,13 @@ export const parseEpub = async (file: File, options?: { imageStartId?: number; c
                     const text = el.textContent?.trim() || 'Untitled';
 
                     if (el.tagName === 'H1') {
-                        if (!foundTitle) {
+                        if (!foundTitle && !tocEntry) {
                             chapterTitle = text;
                             foundTitle = true;
-                        } else {
+                        } else if (text !== chapterTitle) {
                             subItems.push({ id: el.id, text, level: 1 });
+                        } else {
+                            foundTitle = true;
                         }
                     } else if (el.tagName === 'H2') {
                         subItems.push({ id: el.id, text, level: 2 });
@@ -258,7 +357,7 @@ export const parseEpub = async (file: File, options?: { imageStartId?: number; c
                     id: Date.now().toString(36) + Math.random().toString(36).substr(2, 4) + chapterIndex,
                     title: chapterTitle,
                     content: chapterDoc.body.innerHTML,
-                    level: 1,
+                    level: chapterLevel,
                     subItems: subItems,
                 } as Chapter;
             }

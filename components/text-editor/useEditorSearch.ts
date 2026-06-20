@@ -45,43 +45,72 @@ const resolveDocPosition = (
   return seg ? seg.from + (index - seg.startIndex) : null;
 };
 
-/** 在文档中搜索所有匹配项 */
+/** 在文档中搜索所有匹配项（支持正则） */
 const buildSearchMatches = (
   editor: Editor,
   findText: string,
   matchCase: boolean,
   wholeWord: boolean,
+  useRegex: boolean,
 ): SearchMatch[] => {
   if (!findText) return [];
 
   const { fullText, segments } = collectTextSegments(editor);
   if (!fullText) return [];
 
-  const source = matchCase ? fullText : fullText.toLowerCase();
-  const pattern = matchCase ? findText : findText.toLowerCase();
   const matches: SearchMatch[] = [];
 
-  let startIndex = 0;
-  while ((startIndex = source.indexOf(pattern, startIndex)) > -1) {
-    const endIndex = startIndex + pattern.length;
+  if (useRegex) {
+    // 正则模式
+    try {
+      const flags = matchCase ? 'g' : 'gi';
+      const regex = new RegExp(findText, flags);
+      let match: RegExpExecArray | null;
 
-    // 全词匹配检查
-    if (wholeWord) {
-      const prevChar = startIndex > 0 ? source[startIndex - 1] : ' ';
-      const nextChar = endIndex < source.length ? source[endIndex] : ' ';
-      if (WORD_CHAR_REGEX.test(prevChar) || WORD_CHAR_REGEX.test(nextChar)) {
-        startIndex += 1;
-        continue;
+      while ((match = regex.exec(fullText)) !== null) {
+        const startIndex = match.index;
+        const endIndex = startIndex + match[0].length;
+
+        const from = resolveDocPosition(segments, startIndex);
+        const inclusiveEnd = resolveDocPosition(segments, endIndex - 1);
+        if (from !== null && inclusiveEnd !== null) {
+          matches.push({ from, to: inclusiveEnd + 1 });
+        }
+
+        // 防止空匹配无限循环
+        if (match[0].length === 0) regex.lastIndex++;
       }
+    } catch {
+      // 正则语法错误时返回空
+      return [];
     }
+  } else {
+    // 纯文本模式
+    const source = matchCase ? fullText : fullText.toLowerCase();
+    const pattern = matchCase ? findText : findText.toLowerCase();
 
-    const from = resolveDocPosition(segments, startIndex);
-    const inclusiveEnd = resolveDocPosition(segments, endIndex - 1);
-    if (from !== null && inclusiveEnd !== null) {
-      matches.push({ from, to: inclusiveEnd + 1 });
+    let startIndex = 0;
+    while ((startIndex = source.indexOf(pattern, startIndex)) > -1) {
+      const endIndex = startIndex + pattern.length;
+
+      // 全词匹配检查
+      if (wholeWord) {
+        const prevChar = startIndex > 0 ? source[startIndex - 1] : ' ';
+        const nextChar = endIndex < source.length ? source[endIndex] : ' ';
+        if (WORD_CHAR_REGEX.test(prevChar) || WORD_CHAR_REGEX.test(nextChar)) {
+          startIndex += 1;
+          continue;
+        }
+      }
+
+      const from = resolveDocPosition(segments, startIndex);
+      const inclusiveEnd = resolveDocPosition(segments, endIndex - 1);
+      if (from !== null && inclusiveEnd !== null) {
+        matches.push({ from, to: inclusiveEnd + 1 });
+      }
+
+      startIndex += 1;
     }
-
-    startIndex += 1;
   }
 
   return matches;
@@ -129,20 +158,97 @@ export const useEditorSearch = (
   editor: Editor | null,
   scrollRef?: RefObject<HTMLElement | null>,
 ) => {
-  const [showFindBar, setShowFindBar] = useState(false);
-  const [findText, setFindText] = useState('');
-  const [replaceText, setReplaceText] = useState('');
+  // 从 localStorage 恢复查找栏状态和搜索文本
+  const [showFindBar, setShowFindBar] = useState(() => {
+    try {
+      const saved = localStorage.getItem('editor_search_showFindBar');
+      return saved ? JSON.parse(saved) : false;
+    } catch {
+      return false;
+    }
+  });
+
+  const [findText, setFindText] = useState(() => {
+    try {
+      return localStorage.getItem('editor_search_findText') || '';
+    } catch {
+      return '';
+    }
+  });
+
+  const [replaceText, setReplaceText] = useState(() => {
+    try {
+      return localStorage.getItem('editor_search_replaceText') || '';
+    } catch {
+      return '';
+    }
+  });
+
   const [currentMatchIndex, setCurrentMatchIndex] = useState(-1);
-  const [matchCase, setMatchCase] = useState(false);
-  const [wholeWord, setWholeWord] = useState(false);
+
+  // 从 localStorage 恢复搜索选项状态
+  const [matchCase, setMatchCase] = useState(() => {
+    try {
+      const saved = localStorage.getItem('editor_search_matchCase');
+      return saved ? JSON.parse(saved) : false;
+    } catch {
+      return false;
+    }
+  });
+
+  const [wholeWord, setWholeWord] = useState(() => {
+    try {
+      const saved = localStorage.getItem('editor_search_wholeWord');
+      return saved ? JSON.parse(saved) : false;
+    } catch {
+      return false;
+    }
+  });
+
+  const [useRegex, setUseRegex] = useState(() => {
+    try {
+      const saved = localStorage.getItem('editor_search_useRegex');
+      return saved ? JSON.parse(saved) : false;
+    } catch {
+      return false;
+    }
+  });
+
   // 用一个递增的数字触发重新计算（替换操作后递增）
   const [searchVersion, setSearchVersion] = useState(0);
 
+  // 保存查找栏状态到 localStorage
+  useEffect(() => {
+    localStorage.setItem('editor_search_showFindBar', JSON.stringify(showFindBar));
+  }, [showFindBar]);
+
+  // 保存搜索文本到 localStorage
+  useEffect(() => {
+    localStorage.setItem('editor_search_findText', findText);
+  }, [findText]);
+
+  useEffect(() => {
+    localStorage.setItem('editor_search_replaceText', replaceText);
+  }, [replaceText]);
+
+  // 保存搜索选项到 localStorage
+  useEffect(() => {
+    localStorage.setItem('editor_search_matchCase', JSON.stringify(matchCase));
+  }, [matchCase]);
+
+  useEffect(() => {
+    localStorage.setItem('editor_search_wholeWord', JSON.stringify(wholeWord));
+  }, [wholeWord]);
+
+  useEffect(() => {
+    localStorage.setItem('editor_search_useRegex', JSON.stringify(useRegex));
+  }, [useRegex]);
+
   // 计算所有匹配项
   const matches = useMemo(
-    () => (editor && showFindBar ? buildSearchMatches(editor, findText, matchCase, wholeWord) : []),
+    () => (editor && showFindBar ? buildSearchMatches(editor, findText, matchCase, wholeWord, useRegex) : []),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [editor, findText, showFindBar, matchCase, wholeWord, searchVersion],
+    [editor, findText, showFindBar, matchCase, wholeWord, useRegex, searchVersion],
   );
 
   // 监听编辑器文档变化，自动递增 searchVersion 触发重新搜索
@@ -255,6 +361,8 @@ export const useEditorSearch = (
     setMatchCase,
     wholeWord,
     setWholeWord,
+    useRegex,
+    setUseRegex,
     navigateMatch,
     handleReplace,
     handleReplaceAll,
