@@ -29,6 +29,27 @@ interface EditorPaperProps {
   containerRef: React.RefObject<HTMLDivElement>;
 }
 
+/**
+ * 把鼠标点击坐标映射为编辑器内的文档位置并把光标放过去。
+ *
+ * 之前这里固定调用 `editor.commands.focus('end')`，导致点击页面中
+ * 不属于正文的空白区域（例如左侧无文字的边距）时光标被强行移到
+ * 全文末尾并滚动到底部（上游 Issue #2）。
+ * 现在改为按点击位置定位；取不到位置时只聚焦、保留原光标。
+ */
+const focusAtPointer = (editor: Editor | null, event: React.MouseEvent) => {
+  if (!editor) return;
+
+  const posInfo = editor.view.posAtCoords({ left: event.clientX, top: event.clientY });
+  if (posInfo && posInfo.pos >= 0) {
+    editor.chain().focus(posInfo.pos).run();
+    return;
+  }
+
+  // 点击处没有可定位的文本：仅聚焦并保留当前选区，不跳到底部
+  editor.commands.focus();
+};
+
 const EditorPaper: React.FC<EditorPaperProps> = ({
   editor,
   chapterTitle,
@@ -61,7 +82,7 @@ const EditorPaper: React.FC<EditorPaperProps> = ({
           return;
         }
         e.preventDefault();
-        editor.commands.focus('end');
+        focusAtPointer(editor, e);
       }}
     >
       {/* 拖拽图片提示覆盖层 */}
@@ -90,7 +111,7 @@ const EditorPaper: React.FC<EditorPaperProps> = ({
           if (!editor) return;
           if (e.target === e.currentTarget) {
             e.preventDefault();
-            editor.commands.focus('end');
+            focusAtPointer(editor, e);
           }
         }}
       >
