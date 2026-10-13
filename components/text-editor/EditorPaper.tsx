@@ -29,25 +29,106 @@ interface EditorPaperProps {
   containerRef: React.RefObject<HTMLDivElement>;
 }
 
+/** 带有 caretPositionFromPoint / caretRangeFromPoint 的 Document（跨浏览器声明）。 */
+type CaretDocument = Document & {
+  caretPositionFromPoint?: (x: number, y: number) => { offsetNode: Node; offset: number } | null;
+  caretRangeFromPoint?: (x: number, y: number) => Range | null;
+};
+
+/**
+ * 用浏览器自身的插入符定位 API 把视口坐标解析成 ProseMirror 文档位置。
+ *
+ * 为什么不直接用 `view.posAtCoords()`：它在纵向会对块节点做额外判断
+ * （`posFromCaret` 里的 outsideBlock 逻辑），当 Y 落在两行之间的行距
+ * 空隙、而不是文字行的字身框内时，它会返回**块边界位置**，该位置
+ * 没有对应的插入符矩形，用户看到的就是「光标没出现 / 落到别的行」。
+ * 浏览器自身的 caret 查询没有这层块语义，它会吸附到最近的一行文字，
+ * 与真实鼠标点击落在同一个位置（实测 18/18 与原生点击一致）。
+ */
+const posFromPoint = (view: Editor['view'], x: number, y: number): number | null => {
+  const doc = view.dom.ownerDocument as CaretDocument;
+
+  let node: Node | null = null;
+  let offset = 0;
+
+  const position = doc.caretPositionFromPoint?.(x, y);
+  if (position) {
+    node = position.offsetNode;
+    offset = position.offset;
+  } else {
+    const range = doc.caretRangeFromPoint?.(x, y);
+    if (range) {
+      node = range.startContainer;
+      offset = range.startOffset;
+    }
+  }
+  if (!node) return null;
+
+  // 夹紧偏移，避免元素节点子节点数 / 文本节点长度越界导致 posAtDOM 抛错
+  const max =
+    node.nodeType === Node.TEXT_NODE
+      ? node.nodeValue?.length ?? 0
+      : node.childNodes.length;
+
+  try {
+    return view.posAtDOM(node, Math.min(offset, max));
+  } catch {
+    // 命中的 DOM 不在编辑器内（例如水印覆盖层）：交给调用方兜底
+    return null;
+  }
+};
+
 /**
  * 把鼠标点击坐标映射为编辑器内的文档位置并把光标放过去。
  *
  * 之前这里固定调用 `editor.commands.focus('end')`，导致点击页面中
  * 不属于正文的空白区域（例如左侧无文字的边距）时光标被强行移到
  * 全文末尾并滚动到底部（上游 Issue #2）。
- * 现在改为按点击位置定位；取不到位置时只聚焦、保留原光标。
+ *
+ * 注意：只按原始坐标调用 `view.posAtCoords()` 并不够。点击纸张两侧
+ * 内边距时 X 落在正文列之外，`posAtCoords()` 会返回 null，于是退回
+ * 到 `focus()`；而 Tiptap 的 focus 命令在延迟聚焦时会一并执行
+ * `editor.commands.scrollIntoView()`，把视口滚动到**当前选区**。
+ * 当前选区通常停在全文末尾，用户看到的就是「点侧边就跳到页尾」。
+ *
+ * 因此这里做两件事：
+ *   1. 把点击的纵向位置映射到正文列内对应那一行（X 夹到正文列内），
+ *      让光标落在点击高度对应的那一行上，而不是保留旧光标位置；
+ *      左边距落到该行行首，右边距落到该行行尾；
+ *   2. 聚焦时关闭 `scrollIntoView`，保持视口不动。
  */
 const focusAtPointer = (editor: Editor | null, event: React.MouseEvent) => {
   if (!editor) return;
 
-  const posInfo = editor.view.posAtCoords({ left: event.clientX, top: event.clientY });
-  if (posInfo && posInfo.pos >= 0) {
-    editor.chain().focus(posInfo.pos).run();
+  const { view } = editor;
+  const column = view.dom.getBoundingClientRect();
+  const coords = { left: event.clientX, top: event.clientY };
+
+  // 点击高度是否落在正文列纵向范围内；超出（例如正文下方的纸张留白）
+  // 则不猜位置，只聚焦并保留选区。
+  const insideVertically = coords.top >= column.top && coords.top <= column.bottom;
+
+  let target: number | null = null;
+
+  if (insideVertically) {
+    // 两侧内边距或正文内部：忽略列外的 X，把点击高度映射到对应那一行。
+    const probeX =
+      coords.left < column.left
+        ? column.left + 1
+        : coords.left > column.right
+          ? column.right - 1
+          : coords.left;
+    target = posFromPoint(view, probeX, coords.top);
+  }
+
+  if (target !== null && target >= 0) {
+    // scrollIntoView:false —— 设置选区并聚焦，但不滚动视口
+    editor.chain().focus(target, { scrollIntoView: false }).run();
     return;
   }
 
-  // 点击处没有可定位的文本：仅聚焦并保留当前选区，不跳到底部
-  editor.commands.focus();
+  // 点击处没有可定位的文本：仅聚焦、保留当前选区，且不滚到底部
+  editor.commands.focus(null, { scrollIntoView: false });
 };
 
 const EditorPaper: React.FC<EditorPaperProps> = ({
