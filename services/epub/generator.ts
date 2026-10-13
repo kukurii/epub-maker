@@ -222,14 +222,14 @@ export const generateEpub = async (project: ProjectData) => {
                 if (f.targetChapterIds === undefined) return true;
                 return f.targetChapterIds.includes(chapter.id);
             })
-            .map(f => `<link rel="stylesheet" type="text/css" href="${f.filename}"/>`)
+            .map(f => `<link rel="stylesheet" type="text/css" href="${escapeXml(f.filename)}"/>`)
             .join('\n  ') || '';
 
         const chapterContent = `<?xml version="1.0" encoding="utf-8"?>
 <!DOCTYPE html>
 <html xmlns="http://www.w3.org/1999/xhtml">
 <head>
-  <title>${chapter.title}</title>
+  <title>${escapeXml(chapter.title)}</title>
   <link rel="stylesheet" type="text/css" href="style.css"/>
   ${extraCssLinks}
 </head>
@@ -290,11 +290,11 @@ export const generateEpub = async (project: ProjectData) => {
 
     let extraMetadata = '';
     if (project.metadata.series) {
-        extraMetadata += `<meta name="calibre:series" content="${project.metadata.series}" />\n`;
+        extraMetadata += `<meta name="calibre:series" content="${escapeXml(project.metadata.series)}" />\n`;
     }
     if (project.metadata.subjects && project.metadata.subjects.length > 0) {
         project.metadata.subjects.forEach(tag => {
-            extraMetadata += `<dc:subject>${tag}</dc:subject>\n`;
+            extraMetadata += `<dc:subject>${escapeXml(tag)}</dc:subject>\n`;
         });
     }
 
@@ -311,11 +311,11 @@ export const generateEpub = async (project: ProjectData) => {
     const opfContent = `<?xml version="1.0" encoding="utf-8"?>
 <package xmlns="http://www.idpf.org/2007/opf" unique-identifier="BookId" version="2.0">
   <metadata xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:opf="http://www.idpf.org/2007/opf">
-    <dc:title>${project.metadata.title}</dc:title>
-    <dc:creator opf:role="aut">${project.metadata.creator}</dc:creator>
-    <dc:language>${project.metadata.language}</dc:language>
-    <dc:identifier id="BookId" opf:scheme="UUID">${uid}</dc:identifier>
-    <dc:description>${project.metadata.description}</dc:description>
+    <dc:title>${escapeXml(project.metadata.title)}</dc:title>
+    <dc:creator opf:role="aut">${escapeXml(project.metadata.creator)}</dc:creator>
+    <dc:language>${escapeXml(project.metadata.language)}</dc:language>
+    <dc:identifier id="BookId" opf:scheme="UUID">${escapeXml(uid)}</dc:identifier>
+    <dc:description>${escapeXml(project.metadata.description)}</dc:description>
     ${extraMetadata}
     ${coverImageMetaId ? `<meta name="cover" content="${coverImageMetaId}" />` : ''}
   </metadata>

@@ -32,6 +32,41 @@ const stripFragment = (href: string) => href.split('#')[0];
 
 const resolveHref = (baseDir: string, href: string) => normalizePath(`${baseDir}/${decodeURIComponent(stripFragment(href))}`);
 
+/**
+ * DOMParser 解析非法 XML（例如标题中含未转义的 `&`）时不会抛异常，
+ * 而是返回一个以 <parsererror> 为根节点的文档，导致后续所有查询静默落空。
+ */
+const isParserError = (doc: Document | undefined): boolean =>
+    !doc ||
+    !doc.documentElement ||
+    doc.documentElement.tagName.toLowerCase() === 'parsererror' ||
+    doc.getElementsByTagName('parsererror').length > 0;
+
+/** 把未转义的裸 `&`（不是合法实体引用）修复为 `&amp;` */
+const escapeBareAmpersands = (xml: string): string =>
+    xml.replace(/&(?!(?:[a-zA-Z][a-zA-Z0-9]{1,31}|#\d{1,7}|#x[0-9a-fA-F]{1,6});)/g, '&amp;');
+
+/**
+ * 容错 XML 解析：优先严格解析；遇到 parsererror 时修复常见的裸 `&` 后重试，
+ * 仍然失败则退回 HTML 解析器（宽容模式），保证结构尽量可读。
+ */
+const parseXmlLenient = (parser: DOMParser, text: string): Document => {
+    const strict = parser.parseFromString(text, 'application/xml');
+    if (!isParserError(strict)) return strict;
+
+    const repaired = escapeBareAmpersands(text);
+    if (repaired !== text) {
+        const retried = parser.parseFromString(repaired, 'application/xml');
+        if (!isParserError(retried)) {
+            console.warn('⚠️ EPUB 内 XML 存在未转义的 "&"，已自动修复后解析');
+            return retried;
+        }
+    }
+
+    console.warn('⚠️ EPUB 内 XML 解析失败，退回宽容模式解析');
+    return parser.parseFromString(repaired, 'text/html');
+};
+
 const readImportedToc = async (
     zip: JSZip,
     itemMap: Map<string, ManifestItemInfo>,
@@ -53,7 +88,7 @@ const readImportedToc = async (
     if (ncxItem) {
         const ncxFile = zip.file(ncxItem.zipPath);
         if (ncxFile) {
-            const ncxDoc = parser.parseFromString(await ncxFile.async('text'), 'application/xml');
+            const ncxDoc = parseXmlLenient(parser, await ncxFile.async('text'));
             const ncxDir = ncxItem.zipPath.substring(0, ncxItem.zipPath.lastIndexOf('/')) || opfDir;
 
             const walkNavPoint = (navPoint: Element, depth: number) => {
@@ -115,7 +150,7 @@ export const parseEpub = async (file: File, options?: { imageStartId?: number; c
     const containerFile = zip.file('META-INF/container.xml');
     if (!containerFile) throw new Error('Invalid EPUB: META-INF/container.xml not found.');
     const containerXmlText = await containerFile.async('text');
-    const containerDoc = parser.parseFromString(containerXmlText, 'application/xml');
+    const containerDoc = parseXmlLenient(parser, containerXmlText);
     const opfPath = containerDoc.getElementsByTagName('rootfile')[0]?.getAttribute('full-path');
     if (!opfPath) throw new Error('Invalid EPUB: OPF file path not found in container.xml.');
 
@@ -124,10 +159,32 @@ export const parseEpub = async (file: File, options?: { imageStartId?: number; c
     const opfFile = zip.file(opfPath);
     if (!opfFile) throw new Error(`Invalid EPUB: OPF file not found at ${opfPath}.`);
     const opfXmlText = await opfFile.async('text');
-    const opfDoc = parser.parseFromString(opfXmlText, 'application/xml');
+    const opfDoc = parseXmlLenient(parser, opfXmlText);
 
     const metadataEl = opfDoc.getElementsByTagName('metadata')[0];
-    const dc = (tag: string) => metadataEl.getElementsByTagNameNS('http://purl.org/dc/elements/1.1/', tag)[0]?.textContent?.trim() || '';
+    if (!metadataEl) {
+        throw new Error('Invalid EPUB: <metadata> element not found in OPF.');
+    }
+
+    /**
+     * 读取 dc:* 元数据。兼容两种解析结果：
+     * - XML 模式：元素带 DC 命名空间
+     * - 宽容（HTML）模式：命名空间丢失，需按标签名查询
+     */
+    const dc = (tag: string) => {
+        const byNs = metadataEl.getElementsByTagNameNS('http://purl.org/dc/elements/1.1/', tag)[0];
+        if (byNs?.textContent?.trim()) return byNs.textContent.trim();
+        const escaped = tag.replace(/"/g, '\\"');
+        const byName = metadataEl.querySelector(`dc\\:${escaped}, ${escaped}`);
+        return byName?.textContent?.trim() || '';
+    };
+
+    const dcSubjects = () => {
+        const byNs = Array.from(metadataEl.getElementsByTagNameNS('http://purl.org/dc/elements/1.1/', 'subject'));
+        const nodes = byNs.length ? byNs : Array.from(metadataEl.querySelectorAll('dc\\:subject, subject'));
+        return nodes.map((s) => s.textContent?.trim() || '').filter((s) => s);
+    };
+
     const newMetadata: Metadata = {
         title: dc('title') || file.name.replace(/\.epub$/i, ''),
         creator: dc('creator') || 'Unknown Author',
@@ -135,7 +192,7 @@ export const parseEpub = async (file: File, options?: { imageStartId?: number; c
         description: dc('description') || '',
         publisher: dc('publisher') || '',
         date: dc('date') ? new Date(dc('date')).toISOString().split('T')[0] : new Date().toISOString().split('T')[0],
-        subjects: Array.from(metadataEl.getElementsByTagNameNS('http://purl.org/dc/elements/1.1/', 'subject')).map(s => s.textContent?.trim() || '').filter(s => s),
+        subjects: dcSubjects(),
         series: metadataEl.querySelector('meta[name="calibre:series"]')?.getAttribute('content') || '',
     };
 
